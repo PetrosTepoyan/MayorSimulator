@@ -30,7 +30,7 @@ export default function App() {
   if (!loaded) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.govGold} />
+        <ActivityIndicator size="large" color={colors.gold} />
         <Text style={styles.loadingText}>Booting MayorSim…</Text>
       </View>
     )
@@ -66,7 +66,7 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {body}
     </View>
   )

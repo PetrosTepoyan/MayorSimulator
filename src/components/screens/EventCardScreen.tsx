@@ -4,15 +4,22 @@ import {
   View,
   Text,
   ScrollView,
-  Pressable,
   StyleSheet,
 } from 'react-native'
 import { useGameStore, usePendingEvent } from '../../store/gameStore'
-import { Panel } from '../ui/Panel'
+import { Card } from '../ui/Card'
 import { PixelText } from '../ui/PixelText'
 import { STAT_INFO } from '../../game/explanations'
 import { formatMoney } from '../../game/util'
-import { colors, fonts, sizes, spacing, radius } from '../../theme'
+import {
+  colors,
+  fonts,
+  sizes,
+  spacing,
+  radius,
+  toneColor,
+  toneSoftBg,
+} from '../../theme'
 import type {
   CityStats,
   EventChoice,
@@ -20,7 +27,12 @@ import type {
   StatKey,
 } from '../../game/types'
 
-// Stats whose direction-of-good is "up" (more is better).
+// ============================================================================
+// EventCardScreen — modal-style event presenter.
+// Hero card with the event title + description, optional flavor quote, then
+// each choice as its own tappable card with effect preview chips.
+// ============================================================================
+
 const GOOD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'gdpPerCapita',
   'education',
@@ -33,7 +45,6 @@ const GOOD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'treasury',
 ])
 
-// Stats whose direction-of-good is "down" (less is better).
 const BAD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'unemployment',
   'inflation',
@@ -43,7 +54,6 @@ const BAD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'inequality',
 ])
 
-// Map an event category to a short pixel-chip label.
 const CATEGORY_LABEL: Record<EventCategory, string> = {
   economic: 'ECONOMIC',
   social: 'SOCIAL',
@@ -56,58 +66,86 @@ const CATEGORY_LABEL: Record<EventCategory, string> = {
   health: 'HEALTH',
 }
 
-// Map an event category to an accent color used on the chip and title underline.
-const CATEGORY_COLOR: Record<EventCategory, string> = {
-  economic: colors.govGold,
-  social: colors.govBlue,
-  environmental: colors.govGreen,
-  crisis: colors.govRed,
-  opportunity: colors.good,
-  political: colors.govNavy,
-  foreign: colors.borderStrong,
-  tech: colors.govBlue,
-  health: colors.govGreen,
-}
+type ChipTone = 'good' | 'bad' | 'neutral'
 
-interface PreviewChip {
-  stat: StatKey
-  delta: number
-  tone: 'good' | 'bad' | 'neutral'
-  arrow: '▲' | '▼' | '•'
-}
-
-// Determine if a delta on a given stat is good (green), bad (red) or neutral.
-const tonalize = (stat: StatKey, delta: number): PreviewChip['tone'] => {
+const tonalize = (stat: StatKey, delta: number): ChipTone => {
   if (delta === 0) return 'neutral'
   if (GOOD_IF_UP.has(stat)) return delta > 0 ? 'good' : 'bad'
   if (BAD_IF_UP.has(stat)) return delta > 0 ? 'bad' : 'good'
   return 'neutral'
 }
 
-const arrowFor = (delta: number): PreviewChip['arrow'] =>
+const arrowFor = (delta: number): string =>
   delta > 0 ? '▲' : delta < 0 ? '▼' : '•'
 
-// Sort effects by magnitude and pick top N to preview.
+interface PreviewChip {
+  stat: StatKey
+  delta: number
+  tone: ChipTone
+}
+
 const topEffects = (effects: Partial<CityStats>, n: number): PreviewChip[] => {
-  const entries: PreviewChip[] = (
-    Object.keys(effects) as StatKey[]
-  )
+  const entries: PreviewChip[] = (Object.keys(effects) as StatKey[])
     .filter((k) => effects[k] !== undefined && effects[k] !== 0)
     .map((k) => {
       const delta = effects[k] as number
-      return {
-        stat: k,
-        delta,
-        tone: tonalize(k, delta),
-        arrow: arrowFor(delta),
-      }
+      return { stat: k, delta, tone: tonalize(k, delta) }
     })
   entries.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
   return entries.slice(0, n)
 }
 
-const toneColor = (tone: PreviewChip['tone']): string =>
-  tone === 'good' ? colors.good : tone === 'bad' ? colors.bad : colors.textDim
+// Category-to-tint mapping for the hero card
+const heroTint = (cat: EventCategory): 'default' | 'gold' | 'primary' | 'soft' => {
+  if (cat === 'crisis') return 'gold'
+  if (cat === 'opportunity') return 'primary'
+  return 'default'
+}
+
+// Category-to-chip-tone mapping for the eyebrow chip
+const categoryToneColor = (cat: EventCategory): string => {
+  switch (cat) {
+    case 'crisis':
+      return colors.bad
+    case 'opportunity':
+      return colors.good
+    case 'economic':
+      return colors.gold
+    case 'environmental':
+      return colors.good
+    case 'health':
+      return colors.teal
+    case 'social':
+    case 'political':
+      return colors.primary
+    case 'foreign':
+    case 'tech':
+    default:
+      return colors.textDim
+  }
+}
+
+const categoryToneBg = (cat: EventCategory): string => {
+  switch (cat) {
+    case 'crisis':
+      return colors.redSoft
+    case 'opportunity':
+      return colors.greenSoft
+    case 'economic':
+      return colors.goldSoft
+    case 'environmental':
+      return colors.greenSoft
+    case 'health':
+      return colors.tealSoft
+    case 'social':
+    case 'political':
+      return colors.primarySoft
+    case 'foreign':
+    case 'tech':
+    default:
+      return colors.bgPanelAlt
+  }
+}
 
 interface ChoiceCardProps {
   choice: EventChoice
@@ -115,26 +153,22 @@ interface ChoiceCardProps {
   onPress: (idx: number) => void
 }
 
-function ChoiceCard({ choice, index, onPress }: ChoiceCardProps): JSX.Element {
-  const previews = topEffects(choice.effects, 3)
+function ChoiceCard({ choice, index, onPress }: ChoiceCardProps): React.JSX.Element {
+  const previews = topEffects(choice.effects, 4)
   const cost = choice.cost ?? 0
   return (
-    <Pressable
+    <Card
+      tint="soft"
       onPress={() => onPress(index)}
-      style={({ pressed }) => [
-        styles.choiceCard,
-        pressed && styles.choiceCardPressed,
-      ]}
+      style={styles.choiceCard}
     >
       <View style={styles.choiceTopRow}>
-        <Text style={styles.choiceLabel} numberOfLines={2}>
+        <Text style={styles.choiceLabel} numberOfLines={3}>
           {choice.label}
         </Text>
         {cost > 0 ? (
           <View style={styles.costChip}>
-            <PixelText size="xs" color={colors.govGold}>
-              {`-${formatMoney(cost)}`}
-            </PixelText>
+            <Text style={styles.costChipText}>-{formatMoney(cost)}</Text>
           </View>
         ) : null}
       </View>
@@ -145,12 +179,15 @@ function ChoiceCard({ choice, index, onPress }: ChoiceCardProps): JSX.Element {
             <View
               key={p.stat}
               style={[
-                styles.previewChip,
-                { borderColor: toneColor(p.tone) + '55' },
+                styles.previewPill,
+                {
+                  backgroundColor: toneSoftBg(p.tone),
+                  borderColor: toneColor(p.tone),
+                },
               ]}
             >
               <Text style={[styles.previewArrow, { color: toneColor(p.tone) }]}>
-                {p.arrow}
+                {arrowFor(p.delta)}
               </Text>
               <Text style={styles.previewStat}>
                 {STAT_INFO[p.stat].label}
@@ -161,11 +198,11 @@ function ChoiceCard({ choice, index, onPress }: ChoiceCardProps): JSX.Element {
       ) : (
         <Text style={styles.noEffect}>No measurable impact.</Text>
       )}
-    </Pressable>
+    </Card>
   )
 }
 
-export default function EventCardScreen(): JSX.Element {
+export default function EventCardScreen(): React.JSX.Element {
   const event = usePendingEvent()
   const choose = useGameStore((s) => s.chooseEventOption)
 
@@ -173,18 +210,19 @@ export default function EventCardScreen(): JSX.Element {
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.emptyWrap}>
-          <PixelText size="md" color={colors.textDim}>
-            No event
-          </PixelText>
+          <Text style={styles.emptyText}>No event</Text>
         </View>
       </SafeAreaView>
     )
   }
 
-  const accent = CATEGORY_COLOR[event.category]
   const handleChoose = (idx: number): void => {
     choose(idx)
   }
+
+  const chipColor = categoryToneColor(event.category)
+  const chipBg = categoryToneBg(event.category)
+  const tint = heroTint(event.category)
 
   return (
     <SafeAreaView style={styles.root}>
@@ -192,64 +230,55 @@ export default function EventCardScreen(): JSX.Element {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerRow}>
-          <View style={[styles.categoryChip, { borderColor: accent }]}>
-            <View style={[styles.categoryDot, { backgroundColor: accent }]} />
-            <PixelText size="xs" color={accent} style={styles.categoryLabel}>
+        {/* Eyebrow chip */}
+        <View style={styles.eyebrowRow}>
+          <View
+            style={[
+              styles.categoryChip,
+              { backgroundColor: chipBg, borderColor: chipColor },
+            ]}
+          >
+            <PixelText size="sm" color={chipColor}>
               {CATEGORY_LABEL[event.category]}
             </PixelText>
           </View>
-          <PixelText size="xs" color={colors.textMuted}>
-            INCIDENT
-          </PixelText>
         </View>
 
-        <Panel style={styles.card}>
-          <PixelText
-            size="md"
-            color={colors.text}
-            style={{ ...styles.title, textShadowColor: accent }}
-          >
-            {event.title}
-          </PixelText>
-          <View
-            style={[styles.titleUnderline, { backgroundColor: accent }]}
-          />
-
-          <Text style={styles.description}>{event.description}</Text>
+        {/* Hero event card */}
+        <Card tint={tint} style={styles.heroCard}>
+          <Text style={styles.eventTitle}>{event.title}</Text>
+          <Text style={styles.eventDescription}>{event.description}</Text>
 
           {event.flavor ? (
-            <View style={styles.flavorWrap}>
-              <Text style={styles.flavorQuoteMark}>“</Text>
-              <Text style={styles.flavor}>{event.flavor}</Text>
-            </View>
+            <Card tint="soft" flat style={styles.flavorCard}>
+              <View style={styles.flavorRow}>
+                <Text style={styles.flavorQuote}>“</Text>
+                <Text style={styles.flavorText}>{event.flavor}</Text>
+              </View>
+            </Card>
           ) : null}
+        </Card>
 
-          <View style={styles.choicesHeader}>
-            <View style={styles.choicesHeaderRule} />
-            <PixelText size="xs" color={colors.textMuted}>
-              YOUR MOVE
-            </PixelText>
-            <View style={styles.choicesHeaderRule} />
-          </View>
-
-          <View style={styles.choicesStack}>
-            {event.choices.map((choice, i) => (
-              <ChoiceCard
-                key={`${event.id}-${i}`}
-                choice={choice}
-                index={i}
-                onPress={handleChoose}
-              />
-            ))}
-          </View>
-        </Panel>
-
-        <View style={styles.footer}>
-          <PixelText size="xs" color={colors.textMuted} style={styles.footerText}>
-            Each decision shapes your city.
+        {/* Choices */}
+        <View style={styles.choicesHeader}>
+          <Text style={styles.choicesTitle}>Your decision</Text>
+          <PixelText size="xs" color={colors.textMuted}>
+            {event.choices.length} OPTION{event.choices.length === 1 ? '' : 'S'}
           </PixelText>
         </View>
+
+        <View style={styles.choicesStack}>
+          {event.choices.map((choice, i) => (
+            <ChoiceCard
+              key={`${event.id}-${i}`}
+              choice={choice}
+              index={i}
+              onPress={handleChoose}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.footerHint}>Decisions cascade. No going back.</Text>
       </ScrollView>
     </SafeAreaView>
   )
@@ -263,84 +292,66 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
-    paddingTop: spacing.md,
+    gap: spacing.md,
   },
   emptyWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerRow: {
+  emptyText: {
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
+    color: colors.textDim,
+  },
+
+  // Eyebrow
+  eyebrowRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
   },
   categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    backgroundColor: colors.bgElev,
-    gap: spacing.xs + 2,
-  },
-  categoryDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 1,
-  },
-  categoryLabel: {
-    letterSpacing: 2,
-  },
-  card: {
-    marginTop: spacing.xs,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 0,
-    elevation: 6,
-  },
-  title: {
-    textAlign: 'left',
-    lineHeight: sizes.pixelMd + 8,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
-  },
-  titleUnderline: {
-    marginTop: spacing.sm + 2,
-    height: 2,
-    width: 64,
-    opacity: 0.8,
-    marginBottom: spacing.md,
-  },
-  description: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-    color: colors.text,
-    lineHeight: sizes.monoMd + 6,
-    paddingVertical: spacing.xs,
-  },
-  flavorWrap: {
-    marginTop: spacing.md,
-    flexDirection: 'row',
-    backgroundColor: colors.bgElev,
-    borderLeftWidth: 2,
-    borderLeftColor: colors.borderStrong,
-    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
   },
-  flavorQuoteMark: {
+
+  // Hero card
+  heroCard: {
+    marginVertical: 0,
+  },
+  eventTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.titleLg,
+    color: colors.text,
+    lineHeight: sizes.titleLg + 6,
+    marginBottom: spacing.sm,
+  },
+  eventDescription: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyLg,
+    color: colors.text,
+    lineHeight: sizes.bodyLg + 8,
+  },
+  flavorCard: {
+    marginTop: spacing.md,
+    marginVertical: 0,
+  },
+  flavorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  flavorQuote: {
     fontFamily: fonts.mono,
     fontSize: sizes.monoLg,
     color: colors.textMuted,
-    marginRight: spacing.sm,
     lineHeight: sizes.monoLg,
   },
-  flavor: {
+  flavorText: {
     flex: 1,
     fontFamily: fonts.mono,
     fontSize: sizes.monoSm,
@@ -348,39 +359,25 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: sizes.monoSm + 6,
   },
+
+  // Choices
   choicesHeader: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  choicesHeaderRule: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
+  choicesTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
+    color: colors.text,
   },
   choicesStack: {
-    gap: spacing.sm + 2,
+    gap: spacing.sm,
   },
   choiceCard: {
-    backgroundColor: colors.bgPanelAlt,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 0,
-    elevation: 3,
-  },
-  choiceCardPressed: {
-    transform: [{ translateY: 1 }],
-    shadowOpacity: 0,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.bgPanel,
+    marginVertical: 0,
   },
   choiceTopRow: {
     flexDirection: 'row',
@@ -390,18 +387,24 @@ const styles = StyleSheet.create({
   },
   choiceLabel: {
     flex: 1,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
     color: colors.text,
-    lineHeight: sizes.monoMd + 4,
+    lineHeight: sizes.bodyLg + 6,
   },
   costChip: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderColor: colors.govGold,
+    borderRadius: radius.pill,
+    backgroundColor: colors.goldSoft,
+    borderColor: colors.gold,
     borderWidth: 1,
+  },
+  costChipText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
+    color: colors.navy,
+    letterSpacing: 0.3,
   },
   previewRow: {
     marginTop: spacing.sm + 2,
@@ -409,38 +412,38 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs + 2,
   },
-  previewChip: {
+  previewPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     borderWidth: 1,
-    backgroundColor: colors.bg,
     gap: spacing.xs,
   },
   previewArrow: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
   },
   previewStat: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.text,
   },
   noEffect: {
     marginTop: spacing.sm,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textMuted,
     fontStyle: 'italic',
   },
-  footer: {
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
-  footerText: {
-    letterSpacing: 2,
+
+  footerHint: {
+    marginTop: spacing.md,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
+    color: colors.textMuted,
     textAlign: 'center',
+    fontStyle: 'italic',
   },
 })

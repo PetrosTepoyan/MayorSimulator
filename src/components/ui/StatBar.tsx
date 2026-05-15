@@ -7,11 +7,12 @@ interface StatBarProps {
   value: number              // 0-100
   max?: number
   color?: string
-  inverted?: boolean         // true if lower is better (crime, pollution, inequality, unemployment)
+  inverted?: boolean
   showValue?: boolean
+  icon?: string
 }
 
-// Horizontal bar with pixel-styled fill, used for 0-100 stats.
+// Horizontal progress bar — clean modern style.
 export function StatBar({
   label,
   value,
@@ -19,22 +20,25 @@ export function StatBar({
   color,
   inverted = false,
   showValue = true,
+  icon,
 }: StatBarProps) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100))
 
-  // Auto-color: high = good unless inverted
   let barColor = color
   if (!barColor) {
     const score = inverted ? 100 - value : value
     if (score >= 65) barColor = colors.good
-    else if (score >= 35) barColor = colors.govGold
+    else if (score >= 35) barColor = colors.gold
     else barColor = colors.bad
   }
 
   return (
     <View style={styles.row}>
       <View style={styles.labelRow}>
-        <Text style={styles.label}>{label}</Text>
+        <View style={styles.labelLeft}>
+          {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+          <Text style={styles.label}>{label}</Text>
+        </View>
         {showValue ? <Text style={styles.value}>{value.toFixed(0)}</Text> : null}
       </View>
       <View style={styles.track}>
@@ -46,36 +50,39 @@ export function StatBar({
 
 const styles = StyleSheet.create({
   row: {
-    marginVertical: spacing.xs,
+    marginVertical: spacing.xs + 1,
   },
   labelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 2,
+    alignItems: 'center',
+    marginBottom: 4,
   },
+  labelLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  icon: { fontSize: 12 },
   label: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.2,
   },
   value: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
     color: colors.text,
   },
   track: {
-    height: 6,
-    backgroundColor: colors.bg,
+    height: 8,
+    backgroundColor: colors.divider,
     borderRadius: radius.sm,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   fill: {
     height: '100%',
-    borderRadius: 0,
+    borderRadius: radius.sm,
   },
 })

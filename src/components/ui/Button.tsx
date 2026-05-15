@@ -1,6 +1,6 @@
 import React from 'react'
 import { Pressable, Text, StyleSheet, ViewStyle, TextStyle, View } from 'react-native'
-import { colors, fonts, sizes, radius, spacing } from '../../theme'
+import { colors, fonts, sizes, radius, spacing, elevation } from '../../theme'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'gold' | 'ghost'
 
@@ -16,7 +16,7 @@ interface ButtonProps {
   style?: ViewStyle
 }
 
-// Game-flavored button with retro press-down on tap.
+// Modern button — rounded, soft shadow, springs slightly on press.
 export function Button({
   label,
   onPress,
@@ -48,7 +48,7 @@ export function Button({
           style={[
             styles.label,
             VARIANT_TEXT_STYLES[variant],
-            small && { fontSize: sizes.monoSm },
+            small && { fontSize: sizes.body },
           ]}
           numberOfLines={1}
         >
@@ -63,30 +63,25 @@ export function Button({
 const styles = StyleSheet.create({
   base: {
     borderRadius: radius.md,
-    borderWidth: 2,
-    borderColor: 'rgba(0,0,0,0.35)',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
     alignSelf: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 0,
-    elevation: 2,
+    ...elevation.sm,
   },
   small: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
+    paddingVertical: spacing.sm,
   },
   full: {
     alignSelf: 'stretch',
   },
   pressed: {
-    transform: [{ translateY: 1 }],
+    transform: [{ scale: 0.97 }],
     shadowOpacity: 0,
+    elevation: 0,
   },
   disabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
   row: {
     flexDirection: 'row',
@@ -95,24 +90,29 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   label: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
 })
 
 const VARIANT_STYLES: Record<ButtonVariant, ViewStyle> = {
-  primary: { backgroundColor: colors.govBlue },
-  secondary: { backgroundColor: colors.bgPanelAlt, borderColor: colors.borderStrong },
-  danger: { backgroundColor: colors.govRed },
-  gold: { backgroundColor: colors.govGold },
-  ghost: { backgroundColor: 'transparent', borderColor: colors.border, borderWidth: 1 },
+  primary: { backgroundColor: colors.primary },
+  secondary: {
+    backgroundColor: colors.bgPanel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  danger: { backgroundColor: colors.red },
+  gold: { backgroundColor: colors.gold },
+  ghost: { backgroundColor: 'transparent' },
 }
 
 const VARIANT_TEXT_STYLES: Record<ButtonVariant, TextStyle> = {
-  primary: { color: colors.paper },
+  primary: { color: '#ffffff' },
   secondary: { color: colors.text },
-  danger: { color: colors.paper },
-  gold: { color: colors.bg },
-  ghost: { color: colors.text },
+  danger: { color: '#ffffff' },
+  gold: { color: colors.navy },
+  ghost: { color: colors.primary },
 }

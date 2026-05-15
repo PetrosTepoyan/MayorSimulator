@@ -1,19 +1,20 @@
 import React from 'react'
 import { View, Text, Pressable, StyleSheet, ViewStyle } from 'react-native'
-import { colors, fonts, sizes, radius, spacing, toneColor, Tone } from '../../theme'
+import { colors, fonts, sizes, radius, spacing, elevation, toneColor, toneSoftBg, Tone } from '../../theme'
 
 interface StatTileProps {
   label: string
   value: string
-  delta?: number       // pass for ▲/▼ indicator
+  delta?: number
   unit?: string
-  tone?: Tone          // override tone for the value
+  tone?: Tone
   onPress?: () => void
   small?: boolean
+  icon?: string
   style?: ViewStyle
 }
 
-// A single stat readout with optional delta arrow. Tap to learn more.
+// Clean modern stat tile — white card, big value, small label.
 export function StatTile({
   label,
   value,
@@ -22,6 +23,7 @@ export function StatTile({
   tone = 'neutral',
   onPress,
   small,
+  icon,
   style,
 }: StatTileProps) {
   const deltaText =
@@ -31,20 +33,23 @@ export function StatTile({
   const deltaTone: Tone =
     delta === undefined ? 'neutral' : delta > 0 ? 'good' : delta < 0 ? 'bad' : 'neutral'
 
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [
-        styles.tile,
-        small && styles.tileSmall,
-        pressed && onPress ? styles.pressed : null,
-        style,
-      ]}
-    >
-      <Text style={[styles.label, small && { fontSize: sizes.pixelXs }]}>{label}</Text>
-      <View style={styles.row}>
-        <Text style={[styles.value, small && { fontSize: sizes.monoMd }, { color: toneColor(tone) }]}>
+  const inner = (
+    <>
+      <View style={styles.labelRow}>
+        {icon ? <Text style={styles.icon}>{icon}</Text> : null}
+        <Text style={[styles.label, small && { fontSize: sizes.caption - 1 }]} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+      <View style={styles.valueRow}>
+        <Text
+          style={[
+            styles.value,
+            small && { fontSize: sizes.monoMd },
+            { color: tone === 'neutral' ? colors.text : toneColor(tone) },
+          ]}
+          numberOfLines={1}
+        >
           {value}
           {unit ? <Text style={styles.unit}>{unit}</Text> : null}
         </Text>
@@ -52,40 +57,60 @@ export function StatTile({
       {deltaText ? (
         <Text style={[styles.delta, { color: toneColor(deltaTone) }]}>{deltaText}</Text>
       ) : null}
-    </Pressable>
+    </>
   )
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.tile, small && styles.tileSmall, pressed && styles.pressed, style]}
+      >
+        {inner}
+      </Pressable>
+    )
+  }
+
+  return <View style={[styles.tile, small && styles.tileSmall, style]}>{inner}</View>
 }
 
 const styles = StyleSheet.create({
   tile: {
-    backgroundColor: colors.bgPanelAlt,
+    backgroundColor: colors.bgPanel,
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.md,
     minWidth: 100,
     flexGrow: 1,
     flexBasis: 0,
+    ...elevation.sm,
   },
   tileSmall: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs + 2,
+    paddingVertical: spacing.sm,
   },
-  pressed: {
-    backgroundColor: colors.bgPanel,
-  },
-  row: {
+  pressed: { opacity: 0.85 },
+  labelRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  icon: {
+    fontSize: 14,
   },
   label: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelSm - 1,
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
     color: colors.textDim,
+    letterSpacing: 0.2,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+  },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   value: {
     fontFamily: fonts.mono,
@@ -94,14 +119,15 @@ const styles = StyleSheet.create({
     lineHeight: sizes.monoLg + 2,
   },
   unit: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textMuted,
-    marginLeft: 2,
+    marginLeft: 4,
+    fontWeight: '500',
   },
   delta: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    marginTop: 2,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
+    marginTop: 4,
   },
 })

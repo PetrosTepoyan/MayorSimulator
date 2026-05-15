@@ -1,42 +1,44 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   SafeAreaView,
-  Animated,
-  Easing,
   Modal,
   Pressable,
 } from 'react-native'
 import { Button } from '../ui/Button'
-import { Panel } from '../ui/Panel'
+import { Card } from '../ui/Card'
 import { PixelText } from '../ui/PixelText'
 import { useGameStore } from '../../store/gameStore'
 import { colors, fonts, sizes, spacing, radius } from '../../theme'
 import { hasSave } from '../../game/saveLoad'
 
-const TAGLINES: ReadonlyArray<string> = [
-  '▸ Every decision cascades through systems.',
-  '▸ Build coalitions or burn them down.',
-  '▸ Survive elections, crises, and history.',
+// ============================================================================
+// StartScreen — title / boot screen.
+// A clean, GameDev-Tycoon-flavored landing: warm paper background, a big mono
+// game title, three small feature chips, and a stack of chunky buttons.
+// ============================================================================
+
+const FEATURE_BULLETS: ReadonlyArray<{ icon: string; text: string }> = [
+  { icon: '📊', text: 'Manage taxes, budget, and 60+ events' },
+  { icon: '🏗️', text: 'Build, hire, and grow your influence' },
+  { icon: '📰', text: 'Every decision changes the city\'s story' },
 ]
 
-const ABOUT_PARAGRAPH =
+const ABOUT_TEXT =
   'MayorSim is a turn-based political simulator. You inherit a city — its books, factions, neighborhoods, and grievances — and govern through budgets, taxes, policies, and the events history throws at you. Every lever pulls another. Every choice cascades.'
 
 const CREDITS_LINE = 'Design & code: a single mayor, several sleepless nights.'
 
-export default function StartScreen(): JSX.Element {
+export default function StartScreen(): React.JSX.Element {
   const setPhase = useGameStore((s) => s.setPhase)
   const loadSavedGame = useGameStore((s) => s.loadSavedGame)
 
   const [saveExists, setSaveExists] = useState<boolean>(false)
   const [aboutVisible, setAboutVisible] = useState<boolean>(false)
   const [loadingContinue, setLoadingContinue] = useState<boolean>(false)
-
-  const glow = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     let mounted = true
@@ -48,38 +50,6 @@ export default function StartScreen(): JSX.Element {
       mounted = false
     }
   }, [])
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 1,
-          duration: 1800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glow, {
-          toValue: 0,
-          duration: 1800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    )
-    loop.start()
-    return () => {
-      loop.stop()
-    }
-  }, [glow])
-
-  const titleOpacity = glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.85, 1],
-  })
-  const titleScale = glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.015],
-  })
 
   const handleNewGame = (): void => {
     setPhase('select')
@@ -105,40 +75,34 @@ export default function StartScreen(): JSX.Element {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.heroSpacer} />
-
-        <View style={styles.titleWrap}>
-          <Animated.View
-            style={{
-              opacity: titleOpacity,
-              transform: [{ scale: titleScale }],
-            }}
-          >
-            <PixelText size="lg" style={styles.title}>
-              MAYORSIM
+        {/* Hero block */}
+        <View style={styles.hero}>
+          <Text style={styles.heroIcon}>🏛️</Text>
+          <View style={styles.titleWrap}>
+            <PixelText size="md" color={colors.textDim} style={styles.eyebrow}>
+              GOVERN A CITY
             </PixelText>
-          </Animated.View>
-          <View style={styles.titleUnderline} />
-          <Text style={styles.tagline}>Govern. Decide. Cascade.</Text>
-        </View>
-
-        <View style={styles.crtBlock}>
-          {TAGLINES.map((line) => (
-            <Text key={line} style={styles.crtLine}>
-              {line}
-            </Text>
-          ))}
-          <View style={styles.cursorRow}>
-            <Text style={styles.crtLine}>{'▸ '}</Text>
-            <Animated.View
-              style={[
-                styles.cursor,
-                { opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) },
-              ]}
-            />
+            <Text style={styles.titleBig}>MAYORSIM</Text>
+            <View style={styles.titleUnderline} />
           </View>
+          <Text style={styles.tagline}>
+            Govern the city. Shape the country.
+          </Text>
         </View>
 
+        {/* Feature chips */}
+        <View style={styles.featureStack}>
+          {FEATURE_BULLETS.map((b) => (
+            <Card key={b.text} tint="soft" flat style={styles.featureCard}>
+              <View style={styles.featureRow}>
+                <Text style={styles.featureIcon}>{b.icon}</Text>
+                <Text style={styles.featureText}>{b.text}</Text>
+              </View>
+            </Card>
+          ))}
+        </View>
+
+        {/* Buttons */}
         <View style={styles.buttonStack}>
           <Button
             label="NEW GAME"
@@ -148,7 +112,7 @@ export default function StartScreen(): JSX.Element {
           />
           {saveExists ? (
             <Button
-              label={loadingContinue ? 'LOADING...' : 'CONTINUE'}
+              label={loadingContinue ? 'LOADING…' : 'CONTINUE'}
               variant="gold"
               full
               disabled={loadingContinue}
@@ -166,8 +130,8 @@ export default function StartScreen(): JSX.Element {
         </View>
 
         <View style={styles.footer}>
-          <PixelText size="xs" color={colors.textMuted} style={styles.footerText}>
-            v0.1 prototype
+          <PixelText size="xs" color={colors.textMuted}>
+            v0.2 · prototype
           </PixelText>
         </View>
       </ScrollView>
@@ -179,17 +143,25 @@ export default function StartScreen(): JSX.Element {
         onRequestClose={handleAboutClose}
       >
         <Pressable style={styles.modalBackdrop} onPress={handleAboutClose}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Panel title="About MayorSim">
-              <Text style={styles.aboutBody}>{ABOUT_PARAGRAPH}</Text>
+          <Pressable
+            style={styles.modalCard}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Card title="About MayorSim">
+              <Text style={styles.aboutBody}>{ABOUT_TEXT}</Text>
               <View style={styles.aboutDivider} />
-              <PixelText size="xs" color={colors.textMuted} style={styles.aboutCredits}>
+              <PixelText size="xs" color={colors.textMuted}>
                 {CREDITS_LINE}
               </PixelText>
               <View style={styles.modalActions}>
-                <Button label="CLOSE" variant="secondary" small onPress={handleAboutClose} />
+                <Button
+                  label="CLOSE"
+                  variant="secondary"
+                  small
+                  onPress={handleAboutClose}
+                />
               </View>
-            </Panel>
+            </Card>
           </Pressable>
         </Pressable>
       </Modal>
@@ -206,81 +178,84 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
-    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  heroSpacer: {
-    height: spacing.xxl,
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.huge,
+    paddingBottom: spacing.xl,
+  },
+  heroIcon: {
+    fontSize: 72,
+    lineHeight: 80,
+    marginBottom: spacing.md,
   },
   titleWrap: {
     alignItems: 'center',
-    marginBottom: spacing.xl,
   },
-  title: {
-    fontSize: sizes.pixelLg + 6,
-    color: colors.text,
-    textAlign: 'center',
+  eyebrow: {
+    marginBottom: spacing.sm,
     letterSpacing: 3,
-    textShadowColor: colors.govGold,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+  },
+  titleBig: {
+    fontFamily: fonts.mono,
+    fontSize: 52,
+    lineHeight: 56,
+    color: colors.navy,
+    letterSpacing: 2,
   },
   titleUnderline: {
-    marginTop: spacing.md,
-    height: 2,
-    width: 96,
-    backgroundColor: colors.govGold,
-    opacity: 0.7,
+    marginTop: spacing.sm,
+    height: 3,
+    width: 80,
+    backgroundColor: colors.gold,
+    borderRadius: radius.pill,
   },
   tagline: {
     marginTop: spacing.md,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyLg,
     color: colors.textDim,
-    letterSpacing: 2,
     textAlign: 'center',
   },
-  crtBlock: {
-    alignSelf: 'stretch',
-    backgroundColor: colors.bgElev,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+
+  featureStack: {
+    gap: spacing.sm,
+    marginTop: spacing.lg,
     marginBottom: spacing.xl,
   },
-  crtLine: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.good,
-    lineHeight: sizes.monoSm + 8,
-    letterSpacing: 1,
+  featureCard: {
+    marginVertical: 0,
   },
-  cursorRow: {
+  featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
   },
-  cursor: {
-    width: 8,
-    height: sizes.monoSm,
-    backgroundColor: colors.good,
+  featureIcon: {
+    fontSize: 22,
   },
+  featureText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
+    color: colors.text,
+    lineHeight: sizes.body + 6,
+  },
+
   buttonStack: {
-    alignSelf: 'stretch',
     gap: spacing.md,
     marginBottom: spacing.xl,
   },
+
   footer: {
-    marginTop: 'auto',
-    paddingTop: spacing.xl,
     alignItems: 'center',
+    paddingTop: spacing.lg,
   },
-  footerText: {
-    letterSpacing: 2,
-  },
+
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(28,43,62,0.45)',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
@@ -288,18 +263,15 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   aboutBody: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
     color: colors.text,
-    lineHeight: sizes.monoSm + 8,
+    lineHeight: sizes.body + 8,
   },
   aboutDivider: {
     height: 1,
-    backgroundColor: colors.border,
+    backgroundColor: colors.divider,
     marginVertical: spacing.md,
-  },
-  aboutCredits: {
-    textAlign: 'left',
   },
   modalActions: {
     flexDirection: 'row',

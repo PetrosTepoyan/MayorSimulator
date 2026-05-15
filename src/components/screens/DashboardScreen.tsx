@@ -1,20 +1,22 @@
-import React, { useState, useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import {
   SafeAreaView,
   View,
   Text,
-  ScrollView,
-  Pressable,
-  StyleSheet,
   Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Alert,
 } from 'react-native'
 import { useGameStore, useStats, useTurn } from '../../store/gameStore'
-import { Button } from '../ui/Button'
-import { Panel } from '../ui/Panel'
-import { PixelText } from '../ui/PixelText'
-import { formatMoney, formatPct, quarterToDate } from '../../game/util'
 import { getCountry } from '../../game/countries'
-import { colors, fonts, sizes, spacing, radius } from '../../theme'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { HUD } from '../ui/HUD'
+import { TabBar, TabDef } from '../ui/TabBar'
+import { STAT_INFO } from '../../game/explanations'
+import { colors, spacing, radius, fonts, sizes, elevation } from '../../theme'
 import OverviewTab from './OverviewTab'
 import DistrictsTab from './DistrictsTab'
 import CouncilTab from './CouncilTab'
@@ -22,32 +24,60 @@ import PolicyTab from './PolicyTab'
 import BuildTab from './BuildTab'
 import NewsTab from './NewsTab'
 
-// ============================================================================
-// Tabs
-// ============================================================================
+// ----------------------------------------------------------------------------
+// Tab definition
+// ----------------------------------------------------------------------------
 
 type TabKey = 'overview' | 'districts' | 'council' | 'policy' | 'build' | 'news'
 
-interface TabSpec {
-  key: TabKey
-  label: string
-  icon: string
-}
-
-const TABS: TabSpec[] = [
-  { key: 'overview', label: 'Overview', icon: 'III' },
-  { key: 'districts', label: 'Districts', icon: 'D' },
-  { key: 'council', label: 'Council', icon: 'C' },
-  { key: 'policy', label: 'Policy', icon: 'P' },
-  { key: 'build', label: 'Build', icon: 'B' },
-  { key: 'news', label: 'News', icon: 'N' },
+const TABS: ReadonlyArray<TabDef<TabKey>> = [
+  { key: 'overview', label: 'Home', icon: '🏛️' },
+  { key: 'districts', label: 'Districts', icon: '🗺️' },
+  { key: 'council', label: 'Council', icon: '⚖️' },
+  { key: 'policy', label: 'Policy', icon: '📜' },
+  { key: 'build', label: 'Build', icon: '🏗️' },
+  { key: 'news', label: 'News', icon: '📰' },
 ]
 
-// ============================================================================
-// Component
-// ============================================================================
+const TAB_BAR_HEIGHT = 64
+const FAB_BOTTOM_OFFSET = TAB_BAR_HEIGHT + spacing.lg
 
-export default function DashboardScreen(): JSX.Element {
+// ----------------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------------
+
+function safeGetCountry(id: string): ReturnType<typeof getCountry> | null {
+  try {
+    return getCountry(id)
+  } catch {
+    return null
+  }
+}
+
+function renderTab(tab: TabKey): React.JSX.Element {
+  switch (tab) {
+    case 'overview':
+      return <OverviewTab />
+    case 'districts':
+      return <DistrictsTab />
+    case 'council':
+      return <CouncilTab />
+    case 'policy':
+      return <PolicyTab />
+    case 'build':
+      return <BuildTab />
+    case 'news':
+      return <NewsTab />
+    default:
+      return <OverviewTab />
+  }
+}
+
+// ----------------------------------------------------------------------------
+// DashboardScreen
+// ----------------------------------------------------------------------------
+
+export default function DashboardScreen(): React.JSX.Element {
   const [tab, setTab] = useState<TabKey>('overview')
   const [menuOpen, setMenuOpen] = useState<boolean>(false)
 
@@ -57,103 +87,72 @@ export default function DashboardScreen(): JSX.Element {
   const mayorName = useGameStore((s) => s.mayorName)
   const countryId = useGameStore((s) => s.countryId)
   const termLengthYears = useGameStore((s) => s.termLengthYears)
+  const termsServed = useGameStore((s) => s.termsServed)
   const endTurn = useGameStore((s) => s.endTurn)
   const setPhase = useGameStore((s) => s.setPhase)
   const saveCurrentGame = useGameStore((s) => s.saveCurrentGame)
 
   const country = countryId ? safeGetCountry(countryId) : null
-  const termLen = (country?.termLengthYears ?? termLengthYears ?? 4)
-  const termNumber = Math.floor(turn / (termLen * 4)) + 1
+  const flag = country?.flag ?? '🏛️'
+  const termLen = country?.termLengthYears ?? termLengthYears ?? 4
 
-  const handleEndTurn = useCallback(() => {
+  const handleEndTurn = useCallback((): void => {
     endTurn()
-    // Fire-and-forget save
     void saveCurrentGame()
   }, [endTurn, saveCurrentGame])
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((): void => {
     setMenuOpen(false)
     void saveCurrentGame()
   }, [saveCurrentGame])
 
-  const handleQuit = useCallback(() => {
+  const handleQuit = useCallback((): void => {
     setMenuOpen(false)
     setPhase('start')
   }, [setPhase])
 
-  // Treasury chip color
-  const treasuryTone =
-    stats.treasury < 0
-      ? colors.bad
-      : stats.treasury > 100
-      ? colors.good
-      : colors.govGold
+  const handleTreasuryPress = useCallback((): void => {
+    const info = STAT_INFO.treasury
+    Alert.alert(`${info.label} (${info.unit})`, info.long)
+  }, [])
 
-  // Approval chip color
-  const approvalTone =
-    stats.approval >= 55
-      ? colors.good
-      : stats.approval < 35
-      ? colors.bad
-      : colors.govGold
+  const handleApprovalPress = useCallback((): void => {
+    const info = STAT_INFO.approval
+    Alert.alert(`${info.label} (${info.unit})`, info.long)
+  }, [])
 
   return (
     <SafeAreaView style={styles.root}>
-      {/* ============================================================== */}
-      {/* HEADER (sticky)                                                */}
-      {/* ============================================================== */}
-      <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <View style={styles.headerLeft}>
-            <View style={styles.cityRow}>
-              <PixelText size="sm" color={colors.text}>
-                {cityName || 'New City'}
-              </PixelText>
-              {country?.flag ? (
-                <Text style={styles.flag}>{country.flag}</Text>
-              ) : null}
-            </View>
-            <Text style={styles.subline} numberOfLines={1}>
-              {(mayorName || 'Mayor') + ' • ' + quarterToDate(turn) + ' • Term ' + termNumber}
-            </Text>
-          </View>
-          <View style={styles.headerRight}>
-            <View style={styles.chips}>
-              <View
-                style={[styles.chip, { borderColor: treasuryTone }]}
-              >
-                <Text style={styles.chipLabel}>TREASURY</Text>
-                <Text style={[styles.chipValue, { color: treasuryTone }]}>
-                  {formatMoney(stats.treasury)}
-                </Text>
-              </View>
-              <View
-                style={[styles.chip, { borderColor: approvalTone }]}
-              >
-                <Text style={styles.chipLabel}>APPROVAL</Text>
-                <Text style={[styles.chipValue, { color: approvalTone }]}>
-                  {formatPct(stats.approval, 0)}
-                </Text>
-              </View>
-            </View>
-            <Pressable
-              onPress={() => setMenuOpen(true)}
-              style={({ pressed }) => [
-                styles.menuButton,
-                pressed && { opacity: 0.6 },
-              ]}
-              hitSlop={8}
-              accessibilityLabel="Menu"
-            >
-              <Text style={styles.menuIcon}>{'≡'}</Text>
-            </Pressable>
-          </View>
-        </View>
+      {/* Sticky HUD with optional menu button on the side */}
+      <View style={styles.hudWrap}>
+        <HUD
+          cityName={cityName || 'New City'}
+          mayorName={mayorName || 'Mayor'}
+          flag={flag}
+          turn={turn}
+          termLengthYears={termLen}
+          termsServed={termsServed}
+          treasury={stats.treasury}
+          approval={stats.approval}
+          population={stats.population}
+          inflation={stats.inflation}
+          onTreasuryPress={handleTreasuryPress}
+          onApprovalPress={handleApprovalPress}
+        />
+        <Pressable
+          onPress={() => setMenuOpen(true)}
+          style={({ pressed }) => [
+            styles.menuButton,
+            pressed && styles.menuButtonPressed,
+          ]}
+          hitSlop={8}
+          accessibilityLabel="Menu"
+        >
+          <Text style={styles.menuIcon}>≡</Text>
+        </Pressable>
       </View>
 
-      {/* ============================================================== */}
-      {/* BODY                                                           */}
-      {/* ============================================================== */}
+      {/* Body — active tab */}
       <ScrollView
         style={styles.body}
         contentContainerStyle={styles.bodyContent}
@@ -162,50 +161,22 @@ export default function DashboardScreen(): JSX.Element {
         {renderTab(tab)}
       </ScrollView>
 
-      {/* ============================================================== */}
-      {/* FLOATING END-TURN BUTTON                                       */}
-      {/* ============================================================== */}
+      {/* Floating END TURN button */}
       <View style={styles.fab} pointerEvents="box-none">
         <Button
           label="END TURN ▶"
-          variant="primary"
+          variant="gold"
           onPress={handleEndTurn}
+          style={styles.fabButton}
         />
       </View>
 
-      {/* ============================================================== */}
-      {/* TAB BAR                                                        */}
-      {/* ============================================================== */}
-      <View style={styles.tabBar}>
-        {TABS.map((t) => {
-          const active = t.key === tab
-          return (
-            <Pressable
-              key={t.key}
-              onPress={() => setTab(t.key)}
-              style={({ pressed }) => [
-                styles.tab,
-                active && styles.tabActive,
-                pressed && !active && styles.tabPressed,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tabLabel,
-                  active && styles.tabLabelActive,
-                ]}
-                numberOfLines={1}
-              >
-                {t.label}
-              </Text>
-            </Pressable>
-          )
-        })}
+      {/* Bottom tab bar */}
+      <View style={styles.tabBarWrap}>
+        <TabBar tabs={TABS} active={tab} onChange={setTab} />
       </View>
 
-      {/* ============================================================== */}
-      {/* MENU MODAL                                                     */}
-      {/* ============================================================== */}
+      {/* Overflow menu modal */}
       <Modal
         visible={menuOpen}
         transparent
@@ -218,7 +189,7 @@ export default function DashboardScreen(): JSX.Element {
         >
           <View style={styles.modalSheet}>
             <Pressable onPress={(e) => e.stopPropagation()}>
-              <Panel title="Menu">
+              <Card title="Menu" subtitle="Pause the city for a moment.">
                 <View style={styles.menuList}>
                   <Button
                     label="Save Game"
@@ -239,7 +210,7 @@ export default function DashboardScreen(): JSX.Element {
                     onPress={() => setMenuOpen(false)}
                   />
                 </View>
-              </Panel>
+              </Card>
             </Pressable>
           </View>
         </Pressable>
@@ -248,143 +219,38 @@ export default function DashboardScreen(): JSX.Element {
   )
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function safeGetCountry(id: string): ReturnType<typeof getCountry> | null {
-  try {
-    return getCountry(id)
-  } catch {
-    return null
-  }
-}
-
-function renderTab(tab: TabKey): JSX.Element {
-  switch (tab) {
-    case 'overview':
-      return <OverviewTab />
-    case 'districts':
-      return <DistrictsTab />
-    case 'council':
-      return <CouncilTab />
-    case 'policy':
-      return <PolicyTab />
-    case 'build':
-      return <BuildTab />
-    case 'news':
-      return <NewsTab />
-    default:
-      return <OverviewTab />
-  }
-}
-
-interface ComingSoonProps {
-  title: string
-  hint: string
-}
-
-const ComingSoon = ({ title, hint }: ComingSoonProps): JSX.Element => (
-  <View style={styles.placeholderWrap}>
-    <Panel title={title}>
-      <View style={styles.placeholderInner}>
-        <PixelText size="md" color={colors.govGold}>
-          Coming Soon
-        </PixelText>
-        <Text style={styles.placeholderHint}>{hint}</Text>
-      </View>
-    </Panel>
-  </View>
-)
-
-// ============================================================================
-// Styles
-// ============================================================================
-
-const TAB_BAR_HEIGHT = 56
-const FAB_BOTTOM_OFFSET = TAB_BAR_HEIGHT + spacing.md
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
   },
 
-  // Header
-  header: {
-    backgroundColor: colors.bgElev,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  headerLeft: {
-    flex: 1,
-    minWidth: 0,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  cityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  flag: {
-    fontSize: 18,
-  },
-  subline: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.textDim,
-    marginTop: 2,
-  },
-  chips: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  chip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgPanel,
-    alignItems: 'flex-end',
-    minWidth: 64,
-  },
-  chipLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textMuted,
-    letterSpacing: 0.5,
-  },
-  chipValue: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.text,
-    marginTop: 1,
+  // HUD wrap — overlay the menu button at top-right corner
+  hudWrap: {
+    position: 'relative',
   },
   menuButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
     backgroundColor: colors.bgPanel,
-    borderColor: colors.border,
     borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...elevation.sm,
+  },
+  menuButtonPressed: {
+    opacity: 0.6,
   },
   menuIcon: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
+    fontFamily: fonts.bodyBold,
+    fontSize: 22,
     color: colors.text,
-    lineHeight: sizes.monoLg,
+    lineHeight: 22,
   },
 
   // Body
@@ -392,74 +258,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bodyContent: {
-    paddingBottom: TAB_BAR_HEIGHT + spacing.xxl,
+    paddingBottom: TAB_BAR_HEIGHT + spacing.huge + spacing.lg,
   },
 
-  // FAB
+  // FAB (END TURN)
   fab: {
     position: 'absolute',
-    right: spacing.md,
+    right: spacing.lg,
     bottom: FAB_BOTTOM_OFFSET,
   },
-
-  // Tab bar
-  tabBar: {
-    height: TAB_BAR_HEIGHT,
-    flexDirection: 'row',
-    backgroundColor: colors.bgElev,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs,
-    gap: spacing.xs,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: 'transparent',
-  },
-  tabActive: {
-    backgroundColor: colors.govBlue,
-  },
-  tabPressed: {
-    backgroundColor: colors.bgPanel,
-  },
-  tabLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  tabLabelActive: {
-    color: colors.paper,
+  fabButton: {
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.lg,
+    borderRadius: radius.pill,
+    ...elevation.lg,
   },
 
-  // Placeholder
-  placeholderWrap: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-  },
-  placeholderInner: {
-    paddingVertical: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  placeholderHint: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body,
-    color: colors.textDim,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
+  // Tab bar wrap
+  tabBarWrap: {
+    // Allow shadow to lift the bar slightly above the body
   },
 
   // Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(28,43,62,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
@@ -472,3 +295,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
 })
+
+// Silence unused imports that get tree-shaken in production but help editors.
+void sizes

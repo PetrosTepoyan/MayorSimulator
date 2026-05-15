@@ -8,22 +8,25 @@ interface PixelTextProps extends TextProps {
   style?: TextStyle
 }
 
-// Press Start 2P display text for retro headings and chips.
-export function PixelText({ size = 'sm', color, style, children, ...rest }: PixelTextProps & { children: React.ReactNode }) {
+// Tiny pixel-font label — used for small accent labels only.
+// In v2 we keep these subtle (≤11px) so the main UI is modern body text.
+export function PixelText({
+  size = 'sm',
+  color,
+  style,
+  children,
+  ...rest
+}: PixelTextProps & { children: React.ReactNode }) {
   const sizeMap: Record<NonNullable<PixelTextProps['size']>, number> = {
     xs: sizes.pixelXs,
     sm: sizes.pixelSm,
     md: sizes.pixelMd,
-    lg: sizes.pixelLg,
+    lg: 14,
   }
   return (
     <Text
       {...rest}
-      style={[
-        styles.text,
-        { fontSize: sizeMap[size], color: color ?? colors.text },
-        style,
-      ]}
+      style={[styles.text, { fontSize: sizeMap[size], color: color ?? colors.textDim }, style]}
     >
       {children}
     </Text>
@@ -33,8 +36,7 @@ export function PixelText({ size = 'sm', color, style, children, ...rest }: Pixe
 const styles = StyleSheet.create({
   text: {
     fontFamily: fonts.pixel,
-    letterSpacing: 1,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: colors.text,
   },
 })
