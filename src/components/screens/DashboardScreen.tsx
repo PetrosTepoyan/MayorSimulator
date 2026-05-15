@@ -16,7 +16,7 @@ import { Card } from '../ui/Card'
 import { HUD } from '../ui/HUD'
 import { TabBar, TabDef } from '../ui/TabBar'
 import { STAT_INFO } from '../../game/explanations'
-import { colors, spacing, radius, fonts, sizes, elevation } from '../../theme'
+import { colors, spacing, radius, fonts, elevation } from '../../theme'
 import OverviewTab from './OverviewTab'
 import DistrictsTab from './DistrictsTab'
 import CouncilTab from './CouncilTab'
@@ -295,6 +295,3 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
 })
-
-// Silence unused imports that get tree-shaken in production but help editors.
-void sizes

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ScrollView, View, Text, StyleSheet, Pressable } from 'react-native'
+import { View, Text, StyleSheet } from 'react-native'
 import {
   useBuildings,
   useQueuedBuilds,
@@ -7,22 +7,21 @@ import {
   useGameStore,
 } from '../../store/gameStore'
 import { ALL_BUILDING_LIST, ALL_BUILDINGS } from '../../game/allBuildings'
-import { Panel } from '../ui/Panel'
-import { PixelText } from '../ui/PixelText'
+import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { formatMoney } from '../../game/util'
 import { colors, fonts, sizes, spacing, radius } from '../../theme'
 import type {
+  Building,
   BuildingDef,
   BuildingType,
   CityStats,
   QueuedBuild,
-  Building,
 } from '../../game/types'
 
-// ============================================================================
-// Constants — friendly labels for stat keys when shown in effect chips
-// ============================================================================
+// ----------------------------------------------------------------------------
+// Stat label/inversion lookups for effect chips
+// ----------------------------------------------------------------------------
 
 const STAT_LABELS: Partial<Record<keyof CityStats, string>> = {
   treasury: 'Treasury',
@@ -31,7 +30,7 @@ const STAT_LABELS: Partial<Record<keyof CityStats, string>> = {
   inflation: 'Inflation',
   debt: 'Debt',
   creditRating: 'Credit',
-  population: 'Population',
+  population: 'Pop',
   education: 'Education',
   health: 'Health',
   happiness: 'Happiness',
@@ -42,7 +41,6 @@ const STAT_LABELS: Partial<Record<keyof CityStats, string>> = {
   inequality: 'Inequality',
 }
 
-// Stats where a positive delta is BAD (e.g. crime going up is bad).
 const INVERTED_STATS: Array<keyof CityStats> = [
   'unemployment',
   'inflation',
@@ -52,28 +50,37 @@ const INVERTED_STATS: Array<keyof CityStats> = [
   'inequality',
 ]
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Helpers
-// ============================================================================
+// ----------------------------------------------------------------------------
 
-const formatDelta = (n: number): string => {
+function formatDelta(n: number): string {
   const abs = Math.abs(n)
-  // Big absolute values (e.g. gdpPerCapita 50) — show as int
   if (abs >= 10) return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`
   return n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2)
 }
 
-const effectTone = (key: keyof CityStats, delta: number): 'good' | 'bad' => {
+function effectTone(key: keyof CityStats, delta: number): 'good' | 'bad' {
   const inverted = INVERTED_STATS.includes(key)
   const positive = delta > 0
   return positive !== inverted ? 'good' : 'bad'
 }
 
-const computeVariantCost = (def: BuildingDef, variantId?: string): {
-  cost: number
-  upkeep: number
-  perTurnEffect: Partial<CityStats>
-} => {
+function topEffects(
+  effect: Partial<CityStats>,
+  n = 3,
+): Array<{ key: keyof CityStats; delta: number }> {
+  const entries = Object.entries(effect)
+    .filter(([, v]) => typeof v === 'number' && v !== 0)
+    .map(([k, v]) => ({ key: k as keyof CityStats, delta: v as number }))
+  entries.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+  return entries.slice(0, n)
+}
+
+function computeVariantCost(
+  def: BuildingDef,
+  variantId?: string,
+): { cost: number; upkeep: number; perTurnEffect: Partial<CityStats> } {
   if (!variantId || !def.variants) {
     return {
       cost: def.cost,
@@ -92,96 +99,96 @@ const computeVariantCost = (def: BuildingDef, variantId?: string): {
   return {
     cost: def.cost + (v.costDelta ?? 0),
     upkeep: def.upkeep + (v.upkeepDelta ?? 0),
-    // Merge variant effects on top of base
     perTurnEffect: { ...def.perTurnEffect, ...v.perTurnEffect },
   }
 }
 
-// Take the top-N most impactful per-turn effects for a compact preview
-const topEffects = (
-  effect: Partial<CityStats>,
-  n = 3,
-): Array<{ key: keyof CityStats; delta: number }> => {
-  const entries = Object.entries(effect)
-    .filter(([, v]) => typeof v === 'number' && v !== 0)
-    .map(([k, v]) => ({ key: k as keyof CityStats, delta: v as number }))
-  entries.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-  return entries.slice(0, n)
-}
-
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Sub-components
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 interface EffectChipProps {
   statKey: keyof CityStats
   delta: number
 }
 
-const EffectChip = ({ statKey, delta }: EffectChipProps): JSX.Element => {
+function EffectChip({ statKey, delta }: EffectChipProps): React.JSX.Element {
   const tone = effectTone(statKey, delta)
   const color = tone === 'good' ? colors.good : colors.bad
+  const bg = tone === 'good' ? colors.greenSoft : colors.redSoft
   const arrow = delta > 0 ? '▲' : '▼'
   const label = STAT_LABELS[statKey] ?? statKey
   return (
-    <View style={[styles.chip, { borderColor: color }]}>
-      <Text style={[styles.chipText, { color }]}>
-        {arrow} {label} {formatDelta(delta)}/t
+    <View
+      style={[
+        styles.effectChip,
+        { borderColor: color, backgroundColor: bg },
+      ]}
+    >
+      <Text style={[styles.effectChipText, { color }]}>
+        {arrow} {label} {formatDelta(delta)}
       </Text>
     </View>
   )
 }
 
-interface QueuedCardProps {
+interface QueuedItemProps {
   q: QueuedBuild
   onCancel: (id: string) => void
 }
 
-const QueuedCard = ({ q, onCancel }: QueuedCardProps): JSX.Element => {
+function QueuedItem({ q, onCancel }: QueuedItemProps): React.JSX.Element {
   const def = ALL_BUILDINGS[q.type]
   const variantName =
     q.variant && def?.variants
       ? def.variants.find((v) => v.id === q.variant)?.name
       : undefined
   const progressed = q.totalTurns - q.turnsLeft
-  const refund = Math.round(q.cost * 0.7)
+  const pct = Math.max(4, (progressed / q.totalTurns) * 100)
+
   return (
-    <View style={styles.queuedCard}>
-      <View style={styles.queuedHeader}>
-        <Text style={styles.iconLg}>{def?.icon ?? '🏗️'}</Text>
+    <View style={styles.queuedItem}>
+      <View style={styles.queuedTop}>
+        <Text style={styles.queuedIcon}>{def?.icon ?? '🏗️'}</Text>
         <View style={styles.queuedTitleCol}>
-          <Text style={styles.cardName}>
+          <Text style={styles.queuedName}>
             {def?.name ?? q.type}
             {variantName ? ` · ${variantName}` : ''}
           </Text>
           <Text style={styles.queuedMeta}>
-            {'▸ '}
-            {progressed}/{q.totalTurns} turns
-            {'  ·  Spent '}
-            {formatMoney(q.cost)}
+            Q{progressed}/{q.totalTurns} · spent {formatMoney(q.cost)}
           </Text>
         </View>
-      </View>
-      {/* Progress bar */}
-      <View style={styles.progressTrack}>
-        <View
-          style={[
-            styles.progressFill,
-            { width: `${Math.max(4, (progressed / q.totalTurns) * 100)}%` },
-          ]}
-        />
-      </View>
-      <View style={styles.queuedFooter}>
-        <Text style={styles.queuedRefund}>
-          Cancel refunds {formatMoney(refund)} (70%)
-        </Text>
         <Button
           label="Cancel"
-          variant="danger"
+          variant="ghost"
           small
           onPress={() => onCancel(q.id)}
         />
       </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${pct}%` }]} />
+      </View>
+    </View>
+  )
+}
+
+interface ExistingChipProps {
+  icon: string
+  name: string
+  count: number
+}
+
+function ExistingChip({
+  icon,
+  name,
+  count,
+}: ExistingChipProps): React.JSX.Element {
+  return (
+    <View style={styles.existingChip}>
+      <Text style={styles.existingIcon}>{icon}</Text>
+      <Text style={styles.existingCount}>×{count}</Text>
+      <Text style={styles.existingName}>{name}</Text>
     </View>
   )
 }
@@ -192,99 +199,77 @@ interface VariantPickerProps {
   onSelect: (id: string) => void
 }
 
-const VariantPicker = ({
+function VariantPicker({
   def,
   selectedId,
   onSelect,
-}: VariantPickerProps): JSX.Element | null => {
+}: VariantPickerProps): React.JSX.Element | null {
   if (!def.variants || def.variants.length === 0) return null
   return (
-    <View style={styles.variantRow}>
+    <View style={styles.variantsRow}>
       {def.variants.map((v) => {
-        const active = v.id === selectedId
+        const isActive = v.id === selectedId
         return (
-          <Pressable
+          <Button
             key={v.id}
+            label={v.name}
+            variant={isActive ? 'primary' : 'secondary'}
+            small
             onPress={() => onSelect(v.id)}
-            style={({ pressed }) => [
-              styles.variantBtn,
-              active && styles.variantBtnActive,
-              pressed && { opacity: 0.75 },
-            ]}
-          >
-            <Text
-              style={[
-                styles.variantText,
-                active && styles.variantTextActive,
-              ]}
-            >
-              {v.name}
-            </Text>
-            {v.costDelta !== undefined && v.costDelta !== 0 ? (
-              <Text
-                style={[
-                  styles.variantDelta,
-                  active && styles.variantTextActive,
-                ]}
-              >
-                {v.costDelta > 0 ? '+' : ''}
-                {formatMoney(v.costDelta)}
-              </Text>
-            ) : null}
-          </Pressable>
+            style={styles.variantBtn}
+          />
         )
       })}
     </View>
   )
 }
 
-interface BuildingCardProps {
+interface BuildOptionProps {
   def: BuildingDef
   treasury: number
   selectedVariant?: string
-  onSelectVariant: (variantId: string) => void
+  onSelectVariant: (id: string) => void
   onBuild: () => void
 }
 
-const BuildingCard = React.memo(function BuildingCard({
+function BuildOption({
   def,
   treasury,
   selectedVariant,
   onSelectVariant,
   onBuild,
-}: BuildingCardProps): JSX.Element {
-  const { cost, upkeep, perTurnEffect } = computeVariantCost(
-    def,
-    selectedVariant,
-  )
-  const canAfford = treasury >= cost
-  const effects = topEffects(perTurnEffect, 3)
-  const costColor = canAfford ? colors.text : colors.bad
+}: BuildOptionProps): React.JSX.Element {
+  const computed = computeVariantCost(def, selectedVariant)
+  const effects = topEffects(computed.perTurnEffect, 3)
+  const canAfford = treasury >= computed.cost
 
   return (
-    <Panel style={styles.buildCard}>
-      <View style={styles.buildRow}>
-        <Text style={styles.iconXl}>{def.icon}</Text>
+    <Card flat tint="soft" style={styles.buildOption}>
+      <View style={styles.buildOptionTop}>
+        <Text style={styles.buildIcon}>{def.icon}</Text>
         <View style={styles.buildBody}>
-          <Text style={styles.cardName}>{def.name}</Text>
-          <Text style={styles.cardDesc} numberOfLines={2}>
+          <Text style={styles.buildName}>{def.name}</Text>
+          <Text style={styles.buildDescription} numberOfLines={2}>
             {def.description}
           </Text>
 
-          <View style={styles.statRow}>
-            <Text style={[styles.statTxt, { color: costColor }]}>
-              Cost {formatMoney(cost)}
+          <View style={styles.buildMetaRow}>
+            <Text style={styles.buildMetaText}>
+              Cost <Text style={styles.buildMetaValue}>{formatMoney(computed.cost)}</Text>
             </Text>
-            <Text style={styles.statSep}>{'·'}</Text>
-            <Text style={styles.statTxt}>
-              Upkeep {formatMoney(upkeep)}/t
+            <Text style={styles.buildMetaText}>
+              Upkeep{' '}
+              <Text style={styles.buildMetaValue}>
+                {formatMoney(computed.upkeep)}/t
+              </Text>
             </Text>
-            <Text style={styles.statSep}>{'·'}</Text>
-            <Text style={styles.statTxt}>{def.buildTurns}t build</Text>
+            <Text style={styles.buildMetaText}>
+              Build <Text style={styles.buildMetaValue}>{def.buildTurns}Q</Text>
+            </Text>
           </View>
 
           {effects.length > 0 ? (
-            <View style={styles.chipRow}>
+            <View style={styles.effectsRow}>
               {effects.map((e) => (
                 <EffectChip
                   key={String(e.key)}
@@ -295,396 +280,324 @@ const BuildingCard = React.memo(function BuildingCard({
             </View>
           ) : null}
 
-          {def.variants && def.variants.length > 0 ? (
-            <VariantPicker
-              def={def}
-              selectedId={selectedVariant}
-              onSelect={onSelectVariant}
-            />
-          ) : null}
-
-          <View style={styles.buildActionRow}>
-            <Button
-              label={canAfford ? 'Build' : 'Insufficient'}
-              variant={canAfford ? 'primary' : 'secondary'}
-              disabled={!canAfford}
-              onPress={onBuild}
-              small
-            />
-          </View>
+          <VariantPicker
+            def={def}
+            selectedId={selectedVariant}
+            onSelect={onSelectVariant}
+          />
         </View>
       </View>
-    </Panel>
+
+      <View style={styles.buildFooter}>
+        <Button
+          label={canAfford ? 'BUILD' : 'TOO COSTLY'}
+          variant={canAfford ? 'primary' : 'secondary'}
+          small
+          disabled={!canAfford}
+          onPress={onBuild}
+        />
+      </View>
+    </Card>
   )
-})
+}
 
-// ============================================================================
-// Main tab
-// ============================================================================
+// ----------------------------------------------------------------------------
+// BuildTab
+// ----------------------------------------------------------------------------
 
-export default function BuildTab(): JSX.Element {
+export default function BuildTab(): React.JSX.Element {
+  const stats = useStats()
   const buildings = useBuildings()
   const queue = useQueuedBuilds()
-  const stats = useStats()
   const queueBuild = useGameStore((s) => s.queueBuild)
-  const cancel = useGameStore((s) => s.cancelQueuedBuild)
+  const cancelQueuedBuild = useGameStore((s) => s.cancelQueuedBuild)
 
-  // Tracks which variant is chosen per building type. Default: first variant.
-  const [selectedVariant, setSelectedVariant] = useState<Record<string, string>>(
-    () => {
-      const init: Record<string, string> = {}
-      for (const def of ALL_BUILDING_LIST) {
-        if (def.variants && def.variants.length > 0) {
-          init[def.type] = def.variants[0].id
-        }
-      }
-      return init
-    },
-  )
+  // Per-row variant selection
+  const [variantByType, setVariantByType] = useState<
+    Partial<Record<BuildingType, string>>
+  >({})
 
-  // Group existing buildings by type for the compact roster
-  const buildingCounts = useMemo(() => {
-    const counts: Partial<Record<BuildingType, number>> = {}
-    for (const b of buildings as Building[]) {
-      counts[b.type] = (counts[b.type] ?? 0) + 1
+  // Group existing buildings by type
+  const groupedExisting = useMemo<Record<BuildingType, Building[]>>(() => {
+    const map = {} as Record<BuildingType, Building[]>
+    for (const b of buildings) {
+      if (!map[b.type]) map[b.type] = []
+      map[b.type].push(b)
     }
-    return counts
+    return map
   }, [buildings])
 
-  const existingEntries = useMemo(
-    () =>
-      (Object.entries(buildingCounts) as Array<[BuildingType, number]>).sort(
-        (a, b) => b[1] - a[1],
-      ),
-    [buildingCounts],
-  )
-
-  const onPickVariant = (type: BuildingType, variantId: string): void => {
-    setSelectedVariant((prev) => ({ ...prev, [type]: variantId }))
+  const handleSelectVariant = (type: BuildingType, id: string): void => {
+    setVariantByType((prev) => ({ ...prev, [type]: id }))
   }
 
-  const onBuild = (def: BuildingDef): void => {
-    const variant = def.variants ? selectedVariant[def.type] : undefined
+  const handleBuild = (def: BuildingDef): void => {
+    // For buildings with variants, default to the first if none picked.
+    const variant =
+      variantByType[def.type] ?? def.variants?.[0]?.id ?? undefined
     queueBuild(def.type, variant)
   }
 
+  const treasuryTint = stats.treasury > 100 ? 'gold' : 'default'
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Treasury + queued count */}
-      <Panel title="Treasury">
+    <View style={styles.root}>
+      {/* Treasury */}
+      <Card title="Treasury" subtitle="Cash on hand for building." tint={treasuryTint}>
         <View style={styles.treasuryRow}>
-          <Text style={styles.treasuryVal}>{formatMoney(stats.treasury)}</Text>
-          <View
-            style={[
-              styles.queueChip,
-              {
-                borderColor:
-                  queue.length > 0 ? colors.govGold : colors.border,
-              },
-            ]}
-          >
-            <PixelText
-              size="xs"
-              color={queue.length > 0 ? colors.govGold : colors.textDim}
-            >
-              {queue.length} Queued
-            </PixelText>
+          <Text style={styles.treasuryValue}>{formatMoney(stats.treasury)}</Text>
+          <View style={styles.treasuryMetaCol}>
+            <Text style={styles.treasuryMetaLabel}>UNDER CONSTRUCTION</Text>
+            <Text style={styles.treasuryMetaValue}>{queue.length}</Text>
           </View>
         </View>
-      </Panel>
+      </Card>
 
       {/* Under construction */}
       {queue.length > 0 ? (
-        <Panel title="Under Construction">
-          <View style={styles.colGap}>
+        <Card title="Under Construction" subtitle="Cancel refunds 70% of cost.">
+          <View style={styles.queuedList}>
             {queue.map((q) => (
-              <QueuedCard key={q.id} q={q} onCancel={cancel} />
+              <QueuedItem key={q.id} q={q} onCancel={cancelQueuedBuild} />
             ))}
           </View>
-        </Panel>
+        </Card>
       ) : null}
 
-      {/* Existing buildings, compact */}
-      <Panel title="Existing Buildings">
-        {existingEntries.length === 0 ? (
-          <Text style={styles.muted}>No buildings yet. Start construction below.</Text>
+      {/* Existing buildings */}
+      <Card title="Existing buildings" subtitle="Already standing across the city.">
+        {Object.keys(groupedExisting).length === 0 ? (
+          <Text style={styles.muted}>Nothing built yet.</Text>
         ) : (
-          <View style={styles.existingWrap}>
-            {existingEntries.map(([type, n]) => {
+          <View style={styles.existingGrid}>
+            {(Object.keys(groupedExisting) as BuildingType[]).map((type) => {
               const def = ALL_BUILDINGS[type]
+              if (!def) return null
               return (
-                <View key={type} style={styles.existingChip}>
-                  <Text style={styles.existingIcon}>
-                    {def?.icon ?? '🏗️'}
-                  </Text>
-                  <Text style={styles.existingName}>
-                    {def?.name ?? type}
-                  </Text>
-                  <Text style={styles.existingCount}>{'×'}{n}</Text>
-                </View>
+                <ExistingChip
+                  key={type}
+                  icon={def.icon}
+                  name={def.name}
+                  count={groupedExisting[type].length}
+                />
               )
             })}
           </View>
         )}
-      </Panel>
+      </Card>
 
       {/* Build menu */}
-      <Panel title="Build Menu">
-        <View style={styles.colGap}>
+      <Card title="Build Menu" subtitle="Queue construction for next quarter.">
+        <View style={styles.buildList}>
           {ALL_BUILDING_LIST.map((def) => (
-            <BuildingCard
+            <BuildOption
               key={def.type}
               def={def}
               treasury={stats.treasury}
-              selectedVariant={
-                def.variants ? selectedVariant[def.type] : undefined
-              }
-              onSelectVariant={(id) => onPickVariant(def.type, id)}
-              onBuild={() => onBuild(def)}
+              selectedVariant={variantByType[def.type]}
+              onSelectVariant={(id) => handleSelectVariant(def.type, id)}
+              onBuild={() => handleBuild(def)}
             />
           ))}
         </View>
-      </Panel>
-    </ScrollView>
+      </Card>
+    </View>
   )
 }
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Styles
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xxl + spacing.xxl,
-    gap: spacing.sm,
-  },
-  colGap: {
-    gap: spacing.sm,
+  root: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.huge,
+    gap: spacing.md,
   },
 
-  // Treasury header
+  // Treasury
   treasuryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
   },
-  treasuryVal: {
+  treasuryValue: {
+    fontFamily: fonts.mono,
+    fontSize: sizes.monoXl,
+    color: colors.text,
+    lineHeight: sizes.monoXl + 2,
+  },
+  treasuryMetaCol: {
+    alignItems: 'flex-end',
+  },
+  treasuryMetaLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.pixelSm,
+    color: colors.textMuted,
+    letterSpacing: 1,
+  },
+  treasuryMetaValue: {
     fontFamily: fonts.mono,
     fontSize: sizes.monoLg,
-    color: colors.govGold,
-  },
-  queueChip: {
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.bgPanelAlt,
+    color: colors.text,
+    marginTop: 2,
   },
 
-  // Queued card
-  queuedCard: {
-    backgroundColor: colors.bgPanelAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
+  // Queue
+  queuedList: {
+    gap: spacing.md,
+  },
+  queuedItem: {
     gap: spacing.sm,
   },
-  queuedHeader: {
+  queuedTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  queuedIcon: {
+    fontSize: 28,
   },
   queuedTitleCol: {
     flex: 1,
-    gap: 2,
+  },
+  queuedName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
+    color: colors.text,
   },
   queuedMeta: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
     color: colors.textDim,
+    marginTop: 2,
   },
   progressTrack: {
     height: 6,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.divider,
     borderRadius: radius.sm,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.govGold,
-  },
-  queuedFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  queuedRefund: {
-    flex: 1,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm - 2,
-    color: colors.textMuted,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
   },
 
-  // Existing buildings
-  existingWrap: {
+  // Existing
+  existingGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   existingChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 4,
     backgroundColor: colors.bgPanelAlt,
-    borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   existingIcon: {
     fontSize: 16,
   },
-  existingName: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+  existingCount: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
     color: colors.text,
   },
-  existingCount: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.govGold,
-    marginLeft: 2,
+  existingName: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
+    color: colors.textDim,
   },
 
-  // Build menu cards
-  buildCard: {
-    backgroundColor: colors.bgPanel,
+  // Build list
+  buildList: {
+    gap: spacing.sm,
+  },
+  buildOption: {
     marginVertical: 0,
   },
-  buildRow: {
+  buildOptionTop: {
     flexDirection: 'row',
     gap: spacing.md,
     alignItems: 'flex-start',
+  },
+  buildIcon: {
+    fontSize: 32,
   },
   buildBody: {
     flex: 1,
     gap: spacing.xs,
   },
-  iconXl: {
-    fontSize: 32,
-    width: 40,
-    textAlign: 'center',
-  },
-  iconLg: {
-    fontSize: 24,
-    width: 32,
-    textAlign: 'center',
-  },
-  cardName: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
+  buildName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
     color: colors.text,
-    lineHeight: sizes.monoLg + 2,
   },
-  cardDesc: {
+  buildDescription: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
-    lineHeight: 16,
+    lineHeight: 18,
   },
-  statRow: {
+  buildMetaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.md,
     marginTop: spacing.xs,
   },
-  statTxt: {
+  buildMetaText: {
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
+    color: colors.textMuted,
+    letterSpacing: 0.2,
+  },
+  buildMetaValue: {
     fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontSize: sizes.bodyXs,
     color: colors.text,
   },
-  statSep: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.textMuted,
-  },
-
-  // Effect chips
-  chipRow: {
+  effectsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
-  chip: {
+  effectChip: {
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    backgroundColor: colors.bg,
   },
-  chipText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm - 2,
+  effectChipText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.caption,
   },
-
-  // Variant picker
-  variantRow: {
+  variantsRow: {
     flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.sm,
+    flexWrap: 'wrap',
   },
   variantBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.bgPanelAlt,
-    alignItems: 'center',
-    gap: 2,
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 60,
   },
-  variantBtnActive: {
-    backgroundColor: colors.govBlue,
-    borderColor: colors.govBlue,
-  },
-  variantText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.text,
-  },
-  variantTextActive: {
-    color: colors.paper,
-  },
-  variantDelta: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm - 2,
-    color: colors.textMuted,
-  },
-
-  buildActionRow: {
+  buildFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     marginTop: spacing.sm,
   },
 
+  // Common
   muted: {
     fontFamily: fonts.body,
     fontSize: sizes.body,

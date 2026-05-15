@@ -1,100 +1,101 @@
 import React from 'react'
-import { ScrollView, View, Text, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, StyleSheet } from 'react-native'
 import { useNews, useOutlets } from '../../store/gameStore'
-import { Panel } from '../ui/Panel'
-import { PixelText } from '../ui/PixelText'
+import { Card } from '../ui/Card'
 import { quarterToDate } from '../../game/util'
-import { colors, fonts, sizes, spacing, radius } from '../../theme'
-import type { NewsItem, NewsOutlet, MediaBias } from '../../game/types'
+import { colors, fonts, sizes, spacing, radius, toneColor } from '../../theme'
+import type {
+  NewsItem,
+  NewsOutlet,
+  MediaBias,
+} from '../../game/types'
 
 // ----------------------------------------------------------------------------
-// Constants — bias chip colors, tone borders
+// Bias lookups
 // ----------------------------------------------------------------------------
 
 const BIAS_COLOR: Record<MediaBias, string> = {
-  left: '#3b82f6', // blue
-  center: '#71717a', // gray
-  right: '#dc2626', // red
-  tabloid: '#a855f7', // purple
+  left: colors.bias_left,
+  center: colors.bias_center,
+  right: colors.bias_right,
+  tabloid: colors.bias_tabloid,
 }
 
 const BIAS_LABEL: Record<MediaBias, string> = {
-  left: 'LEFT',
-  center: 'CENTER',
-  right: 'RIGHT',
-  tabloid: 'TABLOID',
+  left: 'Left',
+  center: 'Center',
+  right: 'Right',
+  tabloid: 'Tabloid',
 }
 
-const toneColor = (tone: NewsItem['tone']): string =>
-  tone === 'good' ? colors.good : tone === 'bad' ? colors.bad : colors.textDim
+function newsToneColor(t: NewsItem['tone']): string {
+  if (t === 'good') return toneColor('good')
+  if (t === 'bad') return toneColor('bad')
+  return colors.textMuted
+}
 
 // ----------------------------------------------------------------------------
-// BiasChip — color-coded pill for media bias
+// Bias chip
 // ----------------------------------------------------------------------------
 
 interface BiasChipProps {
   bias: MediaBias
-  size?: 'sm' | 'md'
 }
 
-function BiasChip({ bias, size = 'sm' }: BiasChipProps): JSX.Element {
+function BiasChip({ bias }: BiasChipProps): React.JSX.Element {
   const color = BIAS_COLOR[bias]
-  const label = BIAS_LABEL[bias]
-  const isSm = size === 'sm'
   return (
-    <View
-      style={[
-        styles.chip,
-        { borderColor: color },
-        isSm ? styles.chipSm : styles.chipMd,
-      ]}
-    >
-      <View
-        style={[
-          styles.chipDot,
-          { backgroundColor: color },
-          isSm && styles.chipDotSm,
-        ]}
-      />
-      <Text
-        style={[
-          styles.chipLabel,
-          { color },
-          isSm && styles.chipLabelSm,
-        ]}
-      >
-        {label}
-      </Text>
+    <View style={[styles.biasChip, { borderColor: color }]}>
+      <View style={[styles.biasDot, { backgroundColor: color }]} />
+      <Text style={[styles.biasLabel, { color }]}>{BIAS_LABEL[bias]}</Text>
     </View>
   )
 }
 
 // ----------------------------------------------------------------------------
-// FavorBar — signed horizontal mini bar (max 80px wide)
+// Signed mini-favor bar (-100..+100)
 // ----------------------------------------------------------------------------
 
-const FAVOR_BAR_MAX = 80
+const FAVOR_BAR_WIDTH = 96
 
-interface FavorBarProps {
-  favor: number // -100..100
+interface MiniFavorBarProps {
+  favor: number
 }
 
-function FavorBar({ favor }: FavorBarProps): JSX.Element {
+function MiniFavorBar({ favor }: MiniFavorBarProps): React.JSX.Element {
   const clamped = Math.max(-100, Math.min(100, favor))
-  const width = Math.round((Math.abs(clamped) / 100) * FAVOR_BAR_MAX)
-  const fill = clamped >= 0 ? colors.good : colors.bad
+  const half = FAVOR_BAR_WIDTH / 2
+  const fillWidth = Math.round((Math.abs(clamped) / 100) * half)
+  const positive = clamped >= 0
+  const fillColor =
+    clamped > 0 ? colors.good : clamped < 0 ? colors.bad : colors.textMuted
   const sign = clamped > 0 ? '+' : ''
   return (
-    <View style={styles.favorWrap}>
-      <View style={styles.favorTrack}>
-        <View
-          style={[
-            styles.favorFill,
-            { width, backgroundColor: fill },
-          ]}
-        />
+    <View>
+      <View style={[styles.miniTrack, { width: FAVOR_BAR_WIDTH }]}>
+        <View style={styles.miniHalfLeft}>
+          {!positive && fillWidth > 0 ? (
+            <View
+              style={[
+                styles.miniFillLeft,
+                { width: fillWidth, backgroundColor: fillColor },
+              ]}
+            />
+          ) : null}
+        </View>
+        <View style={styles.miniDivider} />
+        <View style={styles.miniHalfRight}>
+          {positive && fillWidth > 0 ? (
+            <View
+              style={[
+                styles.miniFillRight,
+                { width: fillWidth, backgroundColor: fillColor },
+              ]}
+            />
+          ) : null}
+        </View>
       </View>
-      <Text style={[styles.favorValue, { color: fill }]}>
+      <Text style={[styles.miniFavorText, { color: fillColor }]}>
         {sign}
         {Math.round(clamped)}
       </Text>
@@ -103,30 +104,30 @@ function FavorBar({ favor }: FavorBarProps): JSX.Element {
 }
 
 // ----------------------------------------------------------------------------
-// OutletCard — horizontal-scroll item summarizing one outlet
+// Outlet card (horizontal scroll)
 // ----------------------------------------------------------------------------
 
 interface OutletCardProps {
   outlet: NewsOutlet
 }
 
-function OutletCard({ outlet }: OutletCardProps): JSX.Element {
+function OutletCard({ outlet }: OutletCardProps): React.JSX.Element {
   return (
     <View style={styles.outletCard}>
       <Text style={styles.outletName} numberOfLines={1}>
         {outlet.name}
       </Text>
-      <View style={styles.outletChipRow}>
-        <BiasChip bias={outlet.bias} size="sm" />
+      <BiasChip bias={outlet.bias} />
+      <View style={styles.outletFavorBlock}>
+        <Text style={styles.outletFavorLabel}>FAVOR</Text>
+        <MiniFavorBar favor={outlet.favor} />
       </View>
-      <Text style={styles.outletFavorLabel}>FAVOR</Text>
-      <FavorBar favor={outlet.favor} />
     </View>
   )
 }
 
 // ----------------------------------------------------------------------------
-// HeadlineCard — newspaper-style row with tone left border
+// Headline card
 // ----------------------------------------------------------------------------
 
 interface HeadlineCardProps {
@@ -134,61 +135,55 @@ interface HeadlineCardProps {
   outlet?: NewsOutlet
 }
 
-function HeadlineCard({ item, outlet }: HeadlineCardProps): JSX.Element {
-  const border = toneColor(item.tone)
-  const outletName = outlet?.name ?? 'CITY WIRE'
+function HeadlineCard({
+  item,
+  outlet,
+}: HeadlineCardProps): React.JSX.Element {
+  const tone = newsToneColor(item.tone)
+  const outletName = outlet?.name ?? 'City Wire'
   return (
-    <View style={styles.headlineCard}>
-      <View style={[styles.toneBorder, { backgroundColor: border }]} />
-      <View style={styles.headlineBody}>
-        <View style={styles.metaRow}>
-          <Text style={styles.outletInline} numberOfLines={1}>
-            {outletName}
-          </Text>
-          {outlet ? <BiasChip bias={outlet.bias} size="sm" /> : null}
-          <View style={styles.metaSpacer} />
-          <Text style={styles.turnText}>{quarterToDate(item.turn)}</Text>
-        </View>
-        <Text style={styles.headlineText}>{item.headline}</Text>
-        {item.body ? (
-          <Text style={styles.bodyText} numberOfLines={3}>
-            {item.body}
-          </Text>
-        ) : null}
+    <View style={[styles.headlineCard, { borderLeftColor: tone }]}>
+      <View style={styles.headlineMeta}>
+        {outlet ? <BiasChip bias={outlet.bias} /> : null}
+        <Text style={styles.headlineOutlet} numberOfLines={1}>
+          {outletName}
+        </Text>
+        <View style={{ flex: 1 }} />
+        <Text style={styles.headlineDate}>{quarterToDate(item.turn)}</Text>
       </View>
+      <Text style={styles.headlineText}>{item.headline}</Text>
+      {item.body ? (
+        <Text style={styles.headlineBody} numberOfLines={3}>
+          {item.body}
+        </Text>
+      ) : null}
     </View>
   )
 }
 
 // ----------------------------------------------------------------------------
-// Main tab
+// NewsTab
 // ----------------------------------------------------------------------------
 
-export default function NewsTab(): JSX.Element {
+export default function NewsTab(): React.JSX.Element {
   const news = useNews()
   const outlets = useOutlets()
 
-  // Index outlets by id for O(1) lookup when rendering headlines
-  const outletById: Record<string, NewsOutlet> = React.useMemo(() => {
+  const outletById = React.useMemo<Record<string, NewsOutlet>>(() => {
     const map: Record<string, NewsOutlet> = {}
     for (const o of outlets) map[o.id] = o
     return map
   }, [outlets])
 
-  // Newest first
   const headlines: NewsItem[] = React.useMemo(
     () => [...news].reverse(),
     [news],
   )
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Outlets panel */}
-      <Panel title="Media Outlets">
+    <View style={styles.root}>
+      {/* Outlets */}
+      <Card title="Media Outlets" subtitle="Who controls the narrative.">
         {outlets.length === 0 ? (
           <Text style={styles.muted}>No outlets tracked yet.</Text>
         ) : (
@@ -202,22 +197,21 @@ export default function NewsTab(): JSX.Element {
             ))}
           </ScrollView>
         )}
-      </Panel>
+      </Card>
 
-      {/* Headlines panel */}
-      <Panel
+      {/* Headlines */}
+      <Card
         title="Headlines"
+        subtitle="Newest first."
         rightAccessory={
           headlines.length > 0 ? (
-            <PixelText size="xs" color={colors.textMuted}>
-              {`${headlines.length}`}
-            </PixelText>
+            <Text style={styles.countBadge}>{headlines.length}</Text>
           ) : null
         }
       >
         {headlines.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No headlines yet.</Text>
+            <Text style={styles.emptyHeadline}>No headlines yet.</Text>
             <Text style={styles.emptyHint}>
               End a turn to see what the press is saying.
             </Text>
@@ -233,8 +227,8 @@ export default function NewsTab(): JSX.Element {
             ))}
           </View>
         )}
-      </Panel>
-    </ScrollView>
+      </Card>
+    </View>
   )
 }
 
@@ -243,181 +237,164 @@ export default function NewsTab(): JSX.Element {
 // ----------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl + spacing.xxl,
-    gap: spacing.sm,
+  root: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.huge,
+    gap: spacing.md,
   },
 
-  // Chip — bias pill
-  chip: {
+  // Bias chip
+  biasChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     borderWidth: 1,
     borderRadius: radius.pill,
-    backgroundColor: colors.bgPanelAlt,
-  },
-  chipSm: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
+    backgroundColor: colors.bgPanel,
+    alignSelf: 'flex-start',
   },
-  chipMd: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 3,
-  },
-  chipDot: {
+  biasDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginRight: 4,
   },
-  chipDotSm: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  chipLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  chipLabelSm: {
-    fontSize: sizes.pixelXs,
+  biasLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.caption,
+    letterSpacing: 0.3,
   },
 
-  // Outlet horizontal row
+  // Outlets
   outletsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
     paddingVertical: spacing.xs,
   },
   outletCard: {
-    width: 140,
+    width: 160,
     backgroundColor: colors.bgPanelAlt,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     gap: spacing.xs,
   },
   outletName: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
     color: colors.text,
-    lineHeight: sizes.monoSm + 2,
   },
-  outletChipRow: {
-    flexDirection: 'row',
-  },
-  outletFavorLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textMuted,
-    letterSpacing: 0.8,
+  outletFavorBlock: {
     marginTop: spacing.xs,
   },
-
-  // Favor bar
-  favorWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+  outletFavorLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.pixelSm,
+    color: colors.textMuted,
+    letterSpacing: 1,
+    marginBottom: 4,
   },
-  favorTrack: {
-    width: FAVOR_BAR_MAX,
+
+  // Mini favor bar
+  miniTrack: {
     height: 6,
+    flexDirection: 'row',
     backgroundColor: colors.bg,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
   },
-  favorFill: {
-    height: '100%',
+  miniHalfLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
   },
-  favorValue: {
+  miniHalfRight: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+  },
+  miniFillLeft: { height: '100%' },
+  miniFillRight: { height: '100%' },
+  miniDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: colors.borderStrong,
+  },
+  miniFavorText: {
     fontFamily: fonts.mono,
-    fontSize: sizes.monoSm - 2,
-    minWidth: 28,
-    textAlign: 'right',
+    fontSize: sizes.bodyXs,
+    marginTop: 2,
   },
 
-  // Headline list
+  // Headlines
   headlineList: {
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   headlineCard: {
-    flexDirection: 'row',
     backgroundColor: colors.bgPanelAlt,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-  },
-  toneBorder: {
-    width: 4,
-  },
-  headlineBody: {
-    flex: 1,
-    padding: spacing.sm,
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     gap: spacing.xs,
   },
-  metaRow: {
+  headlineMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  outletInline: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+  headlineOutlet: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
-    maxWidth: 130,
+    maxWidth: 140,
   },
-  metaSpacer: {
-    flex: 1,
-  },
-  turnText: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
+  headlineDate: {
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
     color: colors.textMuted,
-    letterSpacing: 0.8,
   },
   headlineText: {
-    fontFamily: fonts.mono,
-    fontSize: 16,
-    color: colors.text,
-    lineHeight: 20,
-    marginTop: 2,
-  },
-  bodyText: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+    fontSize: sizes.bodyLg,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  headlineBody: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
-    lineHeight: 16,
-    marginTop: 2,
+    lineHeight: 18,
   },
 
-  // Empty / muted
+  // Empty / count
   emptyWrap: {
     paddingVertical: spacing.lg,
     alignItems: 'center',
     gap: spacing.xs,
   },
-  emptyText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-    color: colors.textDim,
+  emptyHeadline: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
+    color: colors.text,
   },
   emptyHint: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+    fontSize: sizes.bodyXs,
     color: colors.textMuted,
     fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  countBadge: {
+    fontFamily: fonts.mono,
+    fontSize: sizes.bodyLg,
+    color: colors.textDim,
   },
   muted: {
     fontFamily: fonts.body,
