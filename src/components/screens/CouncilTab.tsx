@@ -1,31 +1,15 @@
-import React from 'react'
-import { ScrollView, View, Text, StyleSheet } from 'react-native'
+import React, { useState } from 'react'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
 import { useFactions } from '../../store/gameStore'
 import { politicalCapital, getActiveDemands } from '../../game/factions'
-import { Panel } from '../ui/Panel'
-import { PixelText } from '../ui/PixelText'
+import { Card } from '../ui/Card'
 import { StatBar } from '../ui/StatBar'
 import { colors, fonts, sizes, spacing, radius } from '../../theme'
 import type { Faction, FactionType, PoliticalLeaning } from '../../game/types'
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function capitalGaugeColor(value: number): string {
-  if (value > 65) return colors.good
-  if (value < 35) return colors.bad
-  return colors.govGold
-}
-
-function capitalMood(value: number): string {
-  if (value > 80) return 'Triumphant'
-  if (value > 65) return 'Strong'
-  if (value > 50) return 'Stable'
-  if (value > 35) return 'Strained'
-  if (value > 20) return 'Hostile'
-  return 'Collapsing'
-}
+// ----------------------------------------------------------------------------
+// Lookups
+// ----------------------------------------------------------------------------
 
 const TYPE_LABEL: Record<FactionType, string> = {
   council: 'Council',
@@ -41,204 +25,225 @@ const IDEOLOGY_LABEL: Record<PoliticalLeaning, string> = {
   conservative: 'Conservative',
 }
 
-function ideologyColor(ideo: PoliticalLeaning): string {
-  switch (ideo) {
-    case 'progressive':
-      return colors.govBlue
-    case 'conservative':
-      return colors.govRed
-    case 'centrist':
-    default:
-      return colors.govGold
-  }
+const IDEOLOGY_COLOR: Record<PoliticalLeaning, string> = {
+  progressive: colors.lean_progressive,
+  centrist: colors.lean_centrist,
+  conservative: colors.lean_conservative,
 }
 
-// ============================================================================
-// Signed favor bar — center is 0, fills left (red) for negative, right (green) for positive.
-// ============================================================================
-
-interface FavorBarProps {
-  value: number // -100..+100
+function capitalMood(value: number): string {
+  if (value > 80) return 'Triumphant'
+  if (value > 65) return 'Strong'
+  if (value > 50) return 'Stable'
+  if (value > 35) return 'Strained'
+  if (value > 20) return 'Hostile'
+  return 'Collapsing'
 }
 
-function FavorBar({ value }: FavorBarProps): JSX.Element {
-  const clamped = Math.max(-100, Math.min(100, value))
-  const pct = Math.abs(clamped) // 0..100, half-width %
+function capitalTint(value: number): 'default' | 'primary' | 'gold' {
+  if (value > 65) return 'primary'
+  if (value < 35) return 'gold'
+  return 'default'
+}
+
+// ----------------------------------------------------------------------------
+// Signed favor bar (-100..+100)
+// ----------------------------------------------------------------------------
+
+interface SignedFavorBarProps {
+  favor: number
+  width?: number
+}
+
+function SignedFavorBar({
+  favor,
+  width = 160,
+}: SignedFavorBarProps): React.JSX.Element {
+  const clamped = Math.max(-100, Math.min(100, favor))
+  const halfWidth = width / 2
+  const fillWidth = Math.round((Math.abs(clamped) / 100) * halfWidth)
   const positive = clamped >= 0
   const fillColor = clamped > 0 ? colors.good : clamped < 0 ? colors.bad : colors.textMuted
   const sign = clamped > 0 ? '+' : ''
 
   return (
-    <View style={styles.favorRow}>
-      <View style={styles.favorLabelRow}>
-        <Text style={styles.miniLabel}>Favor</Text>
-        <Text style={[styles.miniValue, { color: fillColor }]}>
+    <View>
+      <View style={[styles.signedTrack, { width }]}>
+        <View style={styles.signedHalfLeft}>
+          {!positive && fillWidth > 0 ? (
+            <View
+              style={[
+                styles.signedFillLeft,
+                { width: fillWidth, backgroundColor: fillColor },
+              ]}
+            />
+          ) : null}
+        </View>
+        <View style={styles.signedDivider} />
+        <View style={styles.signedHalfRight}>
+          {positive && fillWidth > 0 ? (
+            <View
+              style={[
+                styles.signedFillRight,
+                { width: fillWidth, backgroundColor: fillColor },
+              ]}
+            />
+          ) : null}
+        </View>
+      </View>
+      <View style={[styles.signedScaleRow, { width }]}>
+        <Text style={styles.signedScaleText}>-100</Text>
+        <Text style={[styles.signedScaleText, { color: fillColor }]}>
           {sign}
           {Math.round(clamped)}
         </Text>
-      </View>
-      <View style={styles.favorTrack}>
-        {/* Left half (negative range) */}
-        <View style={styles.favorHalfLeft}>
-          {!positive ? (
-            <View
-              style={[
-                styles.favorFillLeft,
-                { width: `${pct}%`, backgroundColor: fillColor },
-              ]}
-            />
-          ) : null}
-        </View>
-        {/* Center divider */}
-        <View style={styles.favorCenter} />
-        {/* Right half (positive range) */}
-        <View style={styles.favorHalfRight}>
-          {positive ? (
-            <View
-              style={[
-                styles.favorFillRight,
-                { width: `${pct}%`, backgroundColor: fillColor },
-              ]}
-            />
-          ) : null}
-        </View>
-      </View>
-      <View style={styles.favorScaleRow}>
-        <Text style={styles.favorScaleLabel}>-100</Text>
-        <Text style={styles.favorScaleLabel}>0</Text>
-        <Text style={styles.favorScaleLabel}>+100</Text>
+        <Text style={styles.signedScaleText}>+100</Text>
       </View>
     </View>
   )
 }
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Chip
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 interface ChipProps {
   label: string
-  color?: string
-  bg?: string
+  color: string
 }
 
-function Chip({ label, color, bg }: ChipProps): JSX.Element {
+function Chip({ label, color }: ChipProps): React.JSX.Element {
   return (
-    <View
-      style={[
-        styles.chip,
-        bg ? { backgroundColor: bg } : null,
-        color ? { borderColor: color } : null,
+    <View style={[styles.chip, { borderColor: color }]}>
+      <Text style={[styles.chipText, { color }]}>{label}</Text>
+    </View>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// Faction row
+// ----------------------------------------------------------------------------
+
+interface FactionRowProps {
+  faction: Faction
+  expanded: boolean
+  onToggle: () => void
+}
+
+function FactionRow({
+  faction,
+  expanded,
+  onToggle,
+}: FactionRowProps): React.JSX.Element {
+  const ideoColor = IDEOLOGY_COLOR[faction.ideology]
+  return (
+    <Pressable
+      onPress={onToggle}
+      style={({ pressed }) => [
+        styles.factionRow,
+        pressed && { opacity: 0.95 },
       ]}
     >
-      <Text
-        style={[styles.chipText, color ? { color } : null]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </View>
-  )
-}
+      <View style={styles.factionTop}>
+        <View style={styles.factionTitleCol}>
+          <Text style={styles.factionName} numberOfLines={1}>
+            {faction.name}
+          </Text>
+          <View style={styles.factionChips}>
+            <Chip label={IDEOLOGY_LABEL[faction.ideology]} color={ideoColor} />
+            <Chip label={TYPE_LABEL[faction.type]} color={colors.textDim} />
+          </View>
+        </View>
+        <Text style={styles.factionCaret}>{expanded ? '▾' : '▸'}</Text>
+      </View>
 
-// ============================================================================
-// Faction card
-// ============================================================================
-
-interface FactionCardProps {
-  faction: Faction
-}
-
-function FactionCard({ faction }: FactionCardProps): JSX.Element {
-  const ideoColor = ideologyColor(faction.ideology)
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardName} numberOfLines={1}>
-          {faction.name}
-        </Text>
-        <View style={styles.chipRow}>
-          <Chip label={TYPE_LABEL[faction.type]} color={colors.textDim} />
-          <Chip label={IDEOLOGY_LABEL[faction.ideology]} color={ideoColor} />
+      {/* Signed favor + power bar */}
+      <View style={styles.factionBarRow}>
+        <SignedFavorBar favor={faction.favor} />
+        <View style={styles.powerBlock}>
+          <StatBar
+            label="Power"
+            value={faction.power}
+            color={colors.navy}
+          />
         </View>
       </View>
 
-      <Text style={styles.cardDescription} numberOfLines={2}>
-        {faction.description}
-      </Text>
-
-      <FavorBar value={faction.favor} />
-
-      <View style={styles.powerRow}>
-        <StatBar label="Power" value={faction.power} />
-      </View>
-
-      {faction.demand ? (
-        <View style={styles.demandBox}>
-          <Text style={styles.demandLabel}>Top Demand</Text>
-          <Text style={styles.demandText}>{faction.demand}</Text>
+      {expanded ? (
+        <View style={styles.factionExpanded}>
+          <Text style={styles.factionDescription}>{faction.description}</Text>
+          {faction.demand ? (
+            <View style={styles.demandBox}>
+              <Text style={styles.demandLabel}>Top demand</Text>
+              <Text style={styles.demandText}>{faction.demand}</Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
-    </View>
+    </Pressable>
   )
 }
 
-// ============================================================================
-// CouncilTab — main export
-// ============================================================================
+// ----------------------------------------------------------------------------
+// CouncilTab
+// ----------------------------------------------------------------------------
 
-export default function CouncilTab(): JSX.Element {
+export default function CouncilTab(): React.JSX.Element {
   const factions = useFactions()
   const capital = politicalCapital(factions)
   const demands = getActiveDemands(factions)
-  const capitalColor = capitalGaugeColor(capital)
-
   const council = factions.filter((f) => f.type === 'council')
   const lobbies = factions.filter((f) => f.type !== 'council')
 
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const toggle = (id: string): void => {
+    setExpanded(expanded === id ? null : id)
+  }
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Political Capital gauge */}
-      <Panel title="Political Capital">
-        <View style={styles.capitalHeader}>
-          <View>
-            <Text style={styles.capitalValue}>{capital}</Text>
+    <View style={styles.root}>
+      {/* Political Capital */}
+      <Card
+        title="Political Capital"
+        subtitle="How much room you have to push policy."
+        tint={capitalTint(capital)}
+      >
+        <View style={styles.capitalRow}>
+          <Text style={styles.capitalValue}>{capital}</Text>
+          <View style={styles.capitalMoodCol}>
+            <Text style={styles.capitalMoodLabel}>STANDING</Text>
             <Text style={styles.capitalMood}>{capitalMood(capital)}</Text>
           </View>
-          <View style={styles.capitalLegend}>
-            <PixelText size="xs" color={colors.textMuted}>
-              Weighted Mood
-            </PixelText>
-            <Text style={styles.capitalHelp}>
-              Aggregate of faction favor, weighted by power.
-            </Text>
-          </View>
         </View>
-        <View style={styles.capitalBarWrap}>
-          <StatBar label="Standing" value={capital} color={capitalColor} />
+        <View style={styles.capitalBar}>
+          <StatBar
+            label="Standing across all factions"
+            value={capital}
+          />
         </View>
-      </Panel>
+      </Card>
 
       {/* Active demands */}
-      <Panel title="Active Demands">
+      <Card title="Active Demands" subtitle="What the city is pressing for.">
         {demands.length === 0 ? (
-          <Text style={styles.emptyText}>
-            No active demands. The room is, for now, quiet.
+          <Text style={styles.muted}>
+            The room is, for now, quiet. No pressing demands.
           </Text>
         ) : (
-          <View>
+          <View style={styles.demandsList}>
             {demands.map((d) => {
-              const sign = d.favor > 0 ? '+' : ''
               const favorColor =
-                d.favor > 0 ? colors.good : d.favor < 0 ? colors.bad : colors.textDim
+                d.favor > 0
+                  ? colors.good
+                  : d.favor < 0
+                    ? colors.bad
+                    : colors.textDim
+              const sign = d.favor > 0 ? '+' : ''
               return (
                 <View key={d.factionId} style={styles.demandRow}>
                   <View style={styles.demandHeaderRow}>
-                    <Text style={styles.demandFaction} numberOfLines={1}>
+                    <Text style={styles.demandFactionName} numberOfLines={1}>
                       {d.faction}
                     </Text>
                     <Text style={[styles.demandFavor, { color: favorColor }]}>
@@ -246,54 +251,73 @@ export default function CouncilTab(): JSX.Element {
                       {Math.round(d.favor)}
                     </Text>
                   </View>
-                  <Text style={styles.demandRowText}>{d.demand}</Text>
+                  <Text style={styles.demandText}>{d.demand}</Text>
                 </View>
               )
             })}
           </View>
         )}
-      </Panel>
+      </Card>
 
       {/* City Council */}
-      <Panel title="City Council">
+      <Card title="City Council" subtitle="Sitting councilors who vote on motions.">
         {council.length === 0 ? (
-          <Text style={styles.emptyText}>No councilors seated.</Text>
+          <Text style={styles.muted}>No councilors seated.</Text>
         ) : (
-          council.map((f) => <FactionCard key={f.id} faction={f} />)
+          <View style={styles.factionsBlock}>
+            {council.map((f) => (
+              <FactionRow
+                key={f.id}
+                faction={f}
+                expanded={expanded === f.id}
+                onToggle={() => toggle(f.id)}
+              />
+            ))}
+          </View>
         )}
-      </Panel>
+      </Card>
 
       {/* Lobbies & Civic Groups */}
-      <Panel title="Lobbies & Civic Groups">
+      <Card
+        title="Lobbies & Civic Groups"
+        subtitle="Outside groups who lobby the room."
+      >
         {lobbies.length === 0 ? (
-          <Text style={styles.emptyText}>No civic groups registered.</Text>
+          <Text style={styles.muted}>No civic groups registered.</Text>
         ) : (
-          lobbies.map((f) => <FactionCard key={f.id} faction={f} />)
+          <View style={styles.factionsBlock}>
+            {lobbies.map((f) => (
+              <FactionRow
+                key={f.id}
+                faction={f}
+                expanded={expanded === f.id}
+                onToggle={() => toggle(f.id)}
+              />
+            ))}
+          </View>
         )}
-      </Panel>
-    </ScrollView>
+      </Card>
+    </View>
   )
 }
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Styles
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
+  root: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.huge,
+    gap: spacing.md,
   },
 
-  // Political capital header
-  capitalHeader: {
+  // Political capital
+  capitalRow: {
     flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: spacing.sm,
   },
   capitalValue: {
@@ -302,41 +326,32 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: sizes.monoXl + 2,
   },
-  capitalMood: {
-    fontFamily: fonts.pixel,
+  capitalMoodCol: {
+    alignItems: 'flex-end',
+  },
+  capitalMoodLabel: {
+    fontFamily: fonts.bodyBold,
     fontSize: sizes.pixelSm,
-    color: colors.textDim,
-    textTransform: 'uppercase',
+    color: colors.textMuted,
     letterSpacing: 1,
+  },
+  capitalMood: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
+    color: colors.text,
     marginTop: 2,
   },
-  capitalLegend: {
-    alignItems: 'flex-end',
-    flexShrink: 1,
-    marginLeft: spacing.md,
-  },
-  capitalHelp: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body - 2,
-    color: colors.textMuted,
-    textAlign: 'right',
-    marginTop: spacing.xs,
-    maxWidth: 180,
-  },
-  capitalBarWrap: {
+  capitalBar: {
     marginTop: spacing.xs,
   },
 
   // Demands list
-  emptyText: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body,
-    color: colors.textMuted,
-    fontStyle: 'italic',
+  demandsList: {
+    gap: spacing.xs,
   },
   demandRow: {
     paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.divider,
     borderBottomWidth: 1,
   },
   demandHeaderRow: {
@@ -345,164 +360,155 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     marginBottom: 2,
   },
-  demandFaction: {
+  demandFactionName: {
     fontFamily: fonts.bodyBold,
     fontSize: sizes.body,
     color: colors.text,
-    flexShrink: 1,
+    flex: 1,
     paddingRight: spacing.sm,
   },
   demandFavor: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
   },
-  demandRowText: {
+  demandText: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
+    lineHeight: 18,
   },
 
-  // Faction card
-  card: {
+  // Factions block
+  factionsBlock: {
+    gap: spacing.sm,
+  },
+  factionRow: {
     backgroundColor: colors.bgPanelAlt,
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md,
-    marginBottom: spacing.sm,
   },
-  cardHeader: {
+  factionTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
-  cardName: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+  factionTitleCol: {
+    flex: 1,
+  },
+  factionName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
     color: colors.text,
-    flexShrink: 1,
-    paddingRight: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  chipRow: {
+  factionChips: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  cardDescription: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+  factionCaret: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
     color: colors.textDim,
-    marginBottom: spacing.sm,
+  },
+
+  factionBarRow: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  powerBlock: {},
+
+  factionExpanded: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopColor: colors.divider,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+  },
+  factionDescription: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
+    color: colors.textDim,
+    lineHeight: 18,
+  },
+  demandBox: {
+    backgroundColor: colors.bgPanel,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.gold,
+  },
+  demandLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.pixelSm,
+    color: colors.textMuted,
+    letterSpacing: 1,
+    marginBottom: 2,
   },
 
   // Chip
   chip: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    marginLeft: spacing.xs,
+    backgroundColor: colors.bgPanel,
   },
   chipText: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.caption,
   },
 
-  // Favor bar (signed)
-  favorRow: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  favorLabelRow: {
+  // Signed favor bar
+  signedTrack: {
+    height: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 2,
-  },
-  miniLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  miniValue: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-  },
-  favorTrack: {
-    height: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.bg,
     borderRadius: radius.sm,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
     overflow: 'hidden',
   },
-  favorHalfLeft: {
+  signedHalfLeft: {
     flex: 1,
-    height: '100%',
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
-  favorHalfRight: {
+  signedHalfRight: {
     flex: 1,
-    height: '100%',
     flexDirection: 'row',
     justifyContent: 'flex-start',
   },
-  favorFillLeft: {
+  signedFillLeft: {
     height: '100%',
   },
-  favorFillRight: {
+  signedFillRight: {
     height: '100%',
   },
-  favorCenter: {
+  signedDivider: {
     width: 2,
     height: '100%',
     backgroundColor: colors.borderStrong,
   },
-  favorScaleRow: {
+  signedScaleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: 4,
   },
-  favorScaleLabel: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm - 4,
-    color: colors.textMuted,
-  },
-
-  // Power row spacing
-  powerRow: {
-    marginTop: spacing.xs,
-  },
-
-  // Demand box on card
-  demandBox: {
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  demandLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 2,
-  },
-  demandText: {
+  signedScaleText: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
-    color: colors.textDim,
+    fontSize: sizes.caption,
+    color: colors.textMuted,
+  },
+
+  // Common
+  muted: {
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
 })

@@ -8,14 +8,34 @@ import {
 } from 'react-native'
 import { useGameStore } from '../../store/gameStore'
 import { Button } from '../ui/Button'
-import { Panel } from '../ui/Panel'
+import { Card } from '../ui/Card'
+import { DateBadge } from '../ui/DateBadge'
 import { PixelText } from '../ui/PixelText'
 import { STAT_INFO } from '../../game/explanations'
 import { formatMoney, quarterToDate } from '../../game/util'
-import { colors, fonts, sizes, spacing, radius } from '../../theme'
-import type { MediaBias, NewsItem, StatChange, StatKey } from '../../game/types'
+import {
+  colors,
+  fonts,
+  sizes,
+  spacing,
+  radius,
+  toneColor,
+  toneSoftBg,
+} from '../../theme'
+import type {
+  MediaBias,
+  NewsItem,
+  StatChange,
+  StatKey,
+} from '../../game/types'
 
-// Stats whose direction-of-good is "up" (more is better).
+// ============================================================================
+// TurnSummaryScreen — after the player ends a turn.
+// Hero: big DateBadge for the quarter that just resolved.
+// Then three cards: treasury delta, stat changes, headlines.
+// ============================================================================
+
+// Stat semantics: what counts as a "good" or "bad" delta direction.
 const GOOD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'gdpPerCapita',
   'education',
@@ -28,7 +48,6 @@ const GOOD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'treasury',
 ])
 
-// Stats whose direction-of-good is "down" (less is better).
 const BAD_IF_UP: ReadonlySet<StatKey> = new Set<StatKey>([
   'unemployment',
   'inflation',
@@ -47,19 +66,33 @@ const tonalize = (stat: StatKey, delta: number): Tone => {
   return 'neutral'
 }
 
-const toneColor = (tone: Tone): string =>
-  tone === 'good' ? colors.good : tone === 'bad' ? colors.bad : colors.textDim
-
 const arrowFor = (delta: number): string =>
   delta > 0 ? '▲' : delta < 0 ? '▼' : '•'
 
-// Format delta: money for treasury/debt, otherwise one decimal.
+const STAT_ICON: Partial<Record<StatKey, string>> = {
+  treasury: '💰',
+  gdpPerCapita: '📈',
+  unemployment: '💼',
+  inflation: '🛒',
+  debt: '💳',
+  creditRating: '🏆',
+  population: '👥',
+  education: '📚',
+  health: '🏥',
+  happiness: '😊',
+  approval: '⭐',
+  crime: '🚓',
+  pollution: '🏭',
+  innovation: '💡',
+  inequality: '⚖️',
+}
+
+// Format a delta value for display next to the stat name.
 const formatDelta = (stat: StatKey, delta: number): string => {
-  const sign = delta > 0 ? '+' : ''
   if (stat === 'treasury' || stat === 'debt') {
-    const money = formatMoney(Math.abs(delta))
-    return `${delta >= 0 ? '+' : '-'}${money}`
+    return `${delta >= 0 ? '+' : '-'}${formatMoney(Math.abs(delta))}`
   }
+  const sign = delta > 0 ? '+' : ''
   if (stat === 'population') {
     return `${sign}${Math.round(delta).toLocaleString()}`
   }
@@ -69,7 +102,7 @@ const formatDelta = (stat: StatKey, delta: number): string => {
   return `${sign}${delta.toFixed(1)}`
 }
 
-// Aggregate stat changes by stat — sum deltas, keep top reason.
+// Aggregated change collapsed across reasons.
 interface AggregatedChange {
   stat: StatKey
   delta: number
@@ -93,9 +126,16 @@ const aggregateChanges = (changes: StatChange[]): AggregatedChange[] => {
       })
     }
   }
-  const list = Array.from(byStat.values())
-  list.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-  return list
+  return Array.from(byStat.values()).sort(
+    (a, b) => Math.abs(b.delta) - Math.abs(a.delta),
+  )
+}
+
+const BIAS_COLOR: Record<MediaBias, string> = {
+  left: colors.bias_left,
+  center: colors.bias_center,
+  right: colors.bias_right,
+  tabloid: colors.bias_tabloid,
 }
 
 const BIAS_LABEL: Record<MediaBias, string> = {
@@ -105,45 +145,40 @@ const BIAS_LABEL: Record<MediaBias, string> = {
   tabloid: 'T',
 }
 
-const BIAS_COLOR: Record<MediaBias, string> = {
-  left: colors.govBlue,
-  center: colors.textDim,
-  right: colors.govRed,
-  tabloid: colors.govGold,
-}
-
 interface OutletInfo {
   name: string
   bias: MediaBias
 }
 
-interface StatChangeRowProps {
-  change: AggregatedChange
-}
-
-function StatChangeRow({ change }: StatChangeRowProps): JSX.Element {
+// ============================================================================
+// Stat change row
+// ============================================================================
+function StatChangeRow({ change }: { change: AggregatedChange }): React.JSX.Element {
   const info = STAT_INFO[change.stat]
   const tone = tonalize(change.stat, change.delta)
   const color = toneColor(tone)
-  const reason = change.reasons.length > 0 ? change.reasons.join(' • ') : null
+  const icon = STAT_ICON[change.stat] ?? '•'
+  const unit =
+    info.unit && info.unit !== '$M' && info.unit !== '$' ? info.unit : ''
+
   return (
     <View style={styles.changeRow}>
-      <Text style={[styles.changeArrow, { color }]}>
-        {arrowFor(change.delta)}
-      </Text>
+      <View style={[styles.changeIconWrap, { backgroundColor: toneSoftBg(tone) }]}>
+        <Text style={styles.changeIcon}>{icon}</Text>
+      </View>
       <View style={styles.changeBody}>
         <View style={styles.changeTopLine}>
-          <Text style={styles.changeLabel}>{info.label}</Text>
+          <Text style={styles.changeLabel} numberOfLines={1}>
+            {info.label}
+          </Text>
           <Text style={[styles.changeDelta, { color }]}>
-            {formatDelta(change.stat, change.delta)}
-            {info.unit && info.unit !== '$M' && info.unit !== '$'
-              ? info.unit
-              : ''}
+            {arrowFor(change.delta)} {formatDelta(change.stat, change.delta)}
+            {unit}
           </Text>
         </View>
-        {reason ? (
+        {change.reasons.length > 0 ? (
           <Text style={styles.changeReason} numberOfLines={2}>
-            {reason}
+            {change.reasons.join(' • ')}
           </Text>
         ) : null}
       </View>
@@ -151,85 +186,93 @@ function StatChangeRow({ change }: StatChangeRowProps): JSX.Element {
   )
 }
 
-interface NewsRowProps {
+// ============================================================================
+// Headline row
+// ============================================================================
+function NewsRow({
+  item,
+  outlet,
+}: {
   item: NewsItem
   outlet: OutletInfo | null
-}
-
-function NewsRow({ item, outlet }: NewsRowProps): JSX.Element {
-  const toneAccent =
-    item.tone === 'good'
-      ? colors.good
-      : item.tone === 'bad'
-      ? colors.bad
-      : colors.textDim
+}): React.JSX.Element {
+  const tone: Tone = item.tone === 'good' ? 'good' : item.tone === 'bad' ? 'bad' : 'neutral'
   const bias = outlet?.bias ?? 'center'
+  const turnLabel = quarterToDate(item.turn)
+
   return (
     <View style={styles.newsRow}>
       <View
         style={[
           styles.newsBadge,
-          { backgroundColor: BIAS_COLOR[bias] + '22', borderColor: BIAS_COLOR[bias] },
+          { backgroundColor: BIAS_COLOR[bias], borderColor: BIAS_COLOR[bias] },
         ]}
       >
-        <PixelText size="xs" color={BIAS_COLOR[bias]}>
-          {BIAS_LABEL[bias]}
-        </PixelText>
+        <Text style={styles.newsBadgeText}>{BIAS_LABEL[bias]}</Text>
       </View>
       <View style={styles.newsBody}>
-        {outlet ? (
-          <Text style={styles.newsOutlet}>{outlet.name.toUpperCase()}</Text>
-        ) : null}
+        <View style={styles.newsTopRow}>
+          {outlet ? (
+            <Text style={styles.newsOutlet} numberOfLines={1}>
+              {outlet.name}
+            </Text>
+          ) : (
+            <Text style={styles.newsOutlet}>—</Text>
+          )}
+          <Text style={styles.newsTurn}>{turnLabel}</Text>
+        </View>
         <Text style={styles.newsHeadline} numberOfLines={3}>
           {item.headline}
         </Text>
       </View>
-      <View style={[styles.newsToneBar, { backgroundColor: toneAccent }]} />
+      <View style={[styles.newsToneBar, { backgroundColor: toneColor(tone) }]} />
     </View>
   )
 }
 
-export default function TurnSummaryScreen(): JSX.Element {
+// ============================================================================
+// Screen
+// ============================================================================
+export default function TurnSummaryScreen(): React.JSX.Element {
   const changes = useGameStore((s) => s.lastTurnChanges)
   const news = useGameStore((s) => s.news)
   const turn = useGameStore((s) => s.turn)
+  const termLengthYears = useGameStore((s) => s.termLengthYears)
+  const termsServed = useGameStore((s) => s.termsServed)
   const outlets = useGameStore((s) => s.outlets)
   const dismiss = useGameStore((s) => s.dismissTurnSummary)
 
-  // Quick lookup table for news outlets.
+  // Quick lookup table for outlets
   const outletMap = React.useMemo<Map<string, OutletInfo>>(() => {
     const m = new Map<string, OutletInfo>()
     for (const o of outlets) m.set(o.id, { name: o.name, bias: o.bias })
     return m
   }, [outlets])
 
-  // Quarter/Year header. turn 0 means the just-finished setup; report shows the
-  // quarter that just concluded — i.e. previous turn label.
-  const reportTurn = Math.max(0, turn - 1)
-  const header = quarterToDate(reportTurn).toUpperCase() + ' REPORT'
+  // Aggregate stat changes; filter near-zero noise.
+  const aggregated = React.useMemo(() => {
+    return aggregateChanges(changes).filter((c) => {
+      if (c.stat === 'treasury' || c.stat === 'debt' || c.stat === 'population') {
+        return Math.abs(c.delta) >= 0.5
+      }
+      return Math.abs(c.delta) >= 0.05
+    })
+  }, [changes])
 
-  // Aggregate & filter changes — drop near-zero noise.
-  const aggregated = React.useMemo(
-    () =>
-      aggregateChanges(changes).filter(
-        (c) =>
-          (c.stat === 'treasury' || c.stat === 'debt' || c.stat === 'population'
-            ? Math.abs(c.delta) >= 0.5
-            : Math.abs(c.delta) >= 0.05),
-      ),
-    [changes],
-  )
-
+  // Treasury isolated for hero card
   const treasuryAgg = aggregated.find((c) => c.stat === 'treasury')
   const treasuryDelta = treasuryAgg?.delta ?? 0
   const treasuryTone: Tone =
     treasuryDelta === 0 ? 'neutral' : treasuryDelta > 0 ? 'good' : 'bad'
 
-  // Latest news first — show up to 6.
-  const recentNews = React.useMemo(
-    () => [...news].slice(-6).reverse(),
-    [news],
-  )
+  // Other stat changes (excluding treasury since it's in its own card)
+  const otherChanges = aggregated.filter((c) => c.stat !== 'treasury')
+
+  // The just-resolved turn is turn-1 since `endTurn` advances first.
+  const reportTurn = Math.max(0, turn - 1)
+
+  // Latest news first — show up to 5
+  const recentNews = React.useMemo(() => [...news].slice(-5).reverse(), [news])
 
   return (
     <SafeAreaView style={styles.root}>
@@ -237,20 +280,28 @@ export default function TurnSummaryScreen(): JSX.Element {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerWrap}>
-          <PixelText size="xs" color={colors.textMuted} style={styles.eyebrow}>
-            END OF TURN
+        {/* Hero — date badge */}
+        <View style={styles.heroWrap}>
+          <PixelText size="sm" color={colors.textMuted} style={styles.eyebrow}>
+            END OF QUARTER
           </PixelText>
-          <PixelText size="md" color={colors.text} style={styles.title}>
-            {header}
-          </PixelText>
-          <View style={styles.titleRule} />
+          <DateBadge
+            turn={reportTurn}
+            termLengthYears={termLengthYears}
+            termsServed={termsServed}
+            style={styles.dateBadge}
+          />
         </View>
 
-        <Panel title="Treasury">
+        <Text style={styles.sectionHeading}>What changed this quarter</Text>
+
+        {/* Treasury card */}
+        <Card title="Treasury">
           <View style={styles.treasuryRow}>
-            <View style={styles.treasuryCol}>
-              <Text style={styles.treasuryLabel}>NET THIS QUARTER</Text>
+            <View>
+              <PixelText size="xs" color={colors.textMuted}>
+                NET THIS QUARTER
+              </PixelText>
               <Text
                 style={[
                   styles.treasuryValue,
@@ -258,38 +309,42 @@ export default function TurnSummaryScreen(): JSX.Element {
                 ]}
               >
                 {treasuryDelta === 0
-                  ? 'NO CHANGE'
+                  ? 'No change'
                   : `${treasuryDelta > 0 ? '+' : '-'}${formatMoney(Math.abs(treasuryDelta))}`}
               </Text>
             </View>
-            <View style={styles.treasurySpark}>
+            <View
+              style={[
+                styles.treasuryArrowWrap,
+                { backgroundColor: toneSoftBg(treasuryTone) },
+              ]}
+            >
               <Text
-                style={[
-                  styles.treasurySparkArrow,
-                  { color: toneColor(treasuryTone) },
-                ]}
+                style={[styles.treasuryArrow, { color: toneColor(treasuryTone) }]}
               >
                 {treasuryDelta === 0 ? '•' : treasuryDelta > 0 ? '▲' : '▼'}
               </Text>
             </View>
           </View>
-        </Panel>
+        </Card>
 
-        <Panel title="Stat Changes">
-          {aggregated.length === 0 ? (
+        {/* Stat changes */}
+        <Card title="Stat changes">
+          {otherChanges.length === 0 ? (
             <Text style={styles.emptyText}>
               A quiet quarter — no significant movement.
             </Text>
           ) : (
             <View style={styles.changesStack}>
-              {aggregated.map((c) => (
+              {otherChanges.map((c) => (
                 <StatChangeRow key={c.stat} change={c} />
               ))}
             </View>
           )}
-        </Panel>
+        </Card>
 
-        <Panel title="Headlines">
+        {/* Headlines */}
+        <Card title="Headlines">
           {recentNews.length === 0 ? (
             <Text style={styles.emptyText}>No headlines yet.</Text>
           ) : (
@@ -303,15 +358,10 @@ export default function TurnSummaryScreen(): JSX.Element {
               ))}
             </View>
           )}
-        </Panel>
+        </Card>
 
         <View style={styles.footer}>
-          <Button
-            label="CONTINUE"
-            variant="primary"
-            full
-            onPress={dismiss}
-          />
+          <Button label="CONTINUE" variant="primary" full onPress={dismiss} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -328,71 +378,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.xxl,
+    gap: spacing.md,
   },
-  headerWrap: {
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
+
+  heroWrap: {
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
   eyebrow: {
     letterSpacing: 2,
-    marginBottom: spacing.xs,
   },
-  title: {
-    letterSpacing: 2,
-    textShadowColor: colors.govGold,
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
+  dateBadge: {
+    alignSelf: 'stretch',
   },
-  titleRule: {
-    marginTop: spacing.sm,
-    height: 2,
-    width: 64,
-    backgroundColor: colors.govGold,
-    opacity: 0.7,
+  sectionHeading: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
+    color: colors.text,
+    marginTop: spacing.xs,
   },
+
+  // Treasury
   treasuryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs,
-  },
-  treasuryCol: {
-    flex: 1,
-  },
-  treasuryLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textMuted,
-    letterSpacing: 1,
-    marginBottom: spacing.xs,
+    gap: spacing.md,
   },
   treasuryValue: {
     fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
-    letterSpacing: 1,
-  },
-  treasurySpark: {
-    paddingHorizontal: spacing.md,
-  },
-  treasurySparkArrow: {
-    fontFamily: fonts.mono,
     fontSize: sizes.monoXl,
+    lineHeight: sizes.monoXl + 4,
+    marginTop: spacing.xs,
   },
+  treasuryArrowWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  treasuryArrow: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 28,
+    lineHeight: 30,
+  },
+
+  // Stat changes
   changesStack: {
     gap: spacing.sm + 2,
   },
   changeRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  changeArrow: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-    width: 14,
-    textAlign: 'center',
-    lineHeight: sizes.monoMd + 4,
+  changeIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changeIcon: {
+    fontSize: 18,
   },
   changeBody: {
     flex: 1,
@@ -405,25 +455,27 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     flex: 1,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
     color: colors.text,
   },
   changeDelta: {
     fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-    letterSpacing: 1,
+    fontSize: sizes.monoSm,
+    letterSpacing: 0.5,
   },
   changeReason: {
     marginTop: 2,
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textMuted,
     fontStyle: 'italic',
-    lineHeight: sizes.monoSm + 4,
+    lineHeight: sizes.bodyXs + 4,
   },
+
+  // News
   newsStack: {
-    gap: spacing.sm + 2,
+    gap: spacing.sm,
   },
   newsRow: {
     flexDirection: 'row',
@@ -431,44 +483,63 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPanelAlt,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     overflow: 'hidden',
   },
   newsBadge: {
     width: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRightWidth: 1,
+  },
+  newsBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
+    color: '#ffffff',
+    letterSpacing: 1,
   },
   newsBody: {
     flex: 1,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    gap: 2,
+  },
+  newsTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   newsOutlet: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
-    letterSpacing: 1,
-    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    flex: 1,
+  },
+  newsTurn: {
+    fontFamily: fonts.mono,
+    fontSize: sizes.bodyXs,
+    color: colors.textMuted,
   },
   newsHeadline: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
     color: colors.text,
-    lineHeight: sizes.monoMd + 4,
+    lineHeight: sizes.body + 6,
   },
   newsToneBar: {
-    width: 3,
+    width: 4,
   },
+
   emptyText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
     color: colors.textMuted,
     fontStyle: 'italic',
     paddingVertical: spacing.xs,
   },
+
   footer: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
 })

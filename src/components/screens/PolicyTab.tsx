@@ -1,9 +1,13 @@
-import React, { useState, useMemo } from 'react'
-import { ScrollView, View, Text, Pressable, StyleSheet } from 'react-native'
-import { useTax, useBudget, usePolicy, useGameStore } from '../../store/gameStore'
+import React, { useMemo, useState } from 'react'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
+import {
+  useTax,
+  useBudget,
+  usePolicy,
+  useGameStore,
+} from '../../store/gameStore'
 import { POLICY_INFO, previewPolicyChange } from '../../game/policies'
-import { Panel } from '../ui/Panel'
-import { PixelText } from '../ui/PixelText'
+import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { StatBar } from '../ui/StatBar'
 import { colors, fonts, sizes, spacing, radius } from '../../theme'
@@ -14,9 +18,9 @@ import type {
   BudgetCategory,
 } from '../../game/types'
 
-// ============================================================================
-// Local helper types
-// ============================================================================
+// ----------------------------------------------------------------------------
+// Specs
+// ----------------------------------------------------------------------------
 
 interface TaxSpec {
   key: keyof TaxPolicy
@@ -28,15 +32,6 @@ interface TaxSpec {
   hint: string
 }
 
-interface BudgetSpec {
-  key: BudgetCategory
-  label: string
-}
-
-// Keys for the qualitative (option-based) policies. minimumWage is handled
-// separately with its own numeric stepper row.
-type DiscretePolicyKey = Exclude<keyof PolicyState, 'minimumWage'>
-
 const TAX_SPECS: readonly TaxSpec[] = [
   {
     key: 'income',
@@ -45,7 +40,7 @@ const TAX_SPECS: readonly TaxSpec[] = [
     max: 50,
     step: 0.5,
     unit: '%',
-    hint: 'Income > 30% may slow growth and prompt flight.',
+    hint: 'Above 30% may slow growth and prompt flight.',
   },
   {
     key: 'sales',
@@ -54,7 +49,7 @@ const TAX_SPECS: readonly TaxSpec[] = [
     max: 25,
     step: 0.5,
     unit: '%',
-    hint: 'Sales tax is regressive — it hits the poor hardest.',
+    hint: 'Regressive — hits low-income households hardest.',
   },
   {
     key: 'property',
@@ -63,7 +58,7 @@ const TAX_SPECS: readonly TaxSpec[] = [
     max: 10,
     step: 0.1,
     unit: '%',
-    hint: 'Stable revenue, but high rates depress home values.',
+    hint: 'Stable revenue. High rates depress home values.',
   },
   {
     key: 'corporate',
@@ -72,19 +67,21 @@ const TAX_SPECS: readonly TaxSpec[] = [
     max: 40,
     step: 0.5,
     unit: '%',
-    hint: 'Above ~30% businesses may relocate to friendlier cities.',
+    hint: 'Above ~30%, businesses may relocate.',
   },
 ] as const
 
-const BUDGET_SPECS: readonly BudgetSpec[] = [
-  { key: 'education', label: 'Education' },
-  { key: 'healthcare', label: 'Healthcare' },
-  { key: 'security', label: 'Security' },
-  { key: 'infrastructure', label: 'Infrastructure' },
-  { key: 'welfare', label: 'Welfare' },
-  { key: 'research', label: 'Research' },
-  { key: 'environment', label: 'Environment' },
+const BUDGET_SPECS: ReadonlyArray<{ key: BudgetCategory; label: string; icon: string }> = [
+  { key: 'education', label: 'Education', icon: '📚' },
+  { key: 'healthcare', label: 'Healthcare', icon: '🏥' },
+  { key: 'security', label: 'Security', icon: '🚓' },
+  { key: 'infrastructure', label: 'Infrastructure', icon: '🛣️' },
+  { key: 'welfare', label: 'Welfare', icon: '🤝' },
+  { key: 'research', label: 'Research', icon: '🔬' },
+  { key: 'environment', label: 'Environment', icon: '🌳' },
 ] as const
+
+type DiscretePolicyKey = Exclude<keyof PolicyState, 'minimumWage'>
 
 const DISCRETE_POLICY_KEYS: readonly DiscretePolicyKey[] = [
   'rentControl',
@@ -96,37 +93,49 @@ const DISCRETE_POLICY_KEYS: readonly DiscretePolicyKey[] = [
   'healthcare',
 ] as const
 
+const POLICY_ICONS: Record<DiscretePolicyKey, string> = {
+  rentControl: '🏠',
+  emissionStandards: '🏭',
+  immigration: '🛂',
+  drugPolicy: '💊',
+  transit: '🚆',
+  education: '🎓',
+  healthcare: '⚕️',
+}
+
 const MIN_WAGE_MIN = 0
 const MIN_WAGE_MAX = 50
 const MIN_WAGE_STEP = 0.5
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Pure helpers
-// ============================================================================
+// ----------------------------------------------------------------------------
 
-/** Clamp a number to [min,max] and round to the precision implied by `step`. */
-function clampStep(value: number, min: number, max: number, step: number): number {
+function clampStep(
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+): number {
   const clamped = Math.max(min, Math.min(max, value))
-  // Avoid drifting floats like 2.499999 by snapping to multiples of step.
   const precision = step < 1 ? 10 : 1
   return Math.round(clamped * precision) / precision
 }
 
 function formatNumber(value: number, step: number): string {
-  // If step is whole, show integer; otherwise show one decimal.
   return step < 1 ? value.toFixed(1) : value.toFixed(0)
 }
 
 function hintForMinimumWage(value: number): string {
   if (value < 5) return 'Below subsistence — working poor will struggle.'
   if (value <= 15) return 'Within the typical "neutral" band.'
-  if (value <= 25) return 'Workers gain real income; some hiring slows.'
+  if (value <= 25) return 'Workers gain real income; hiring slows somewhat.'
   return 'Very high — low-margin employers will cut staff.'
 }
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Sub-components
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 interface StepperRowProps {
   label: string
@@ -148,7 +157,7 @@ function StepperRow({
   unit,
   hint,
   onChange,
-}: StepperRowProps): JSX.Element {
+}: StepperRowProps): React.JSX.Element {
   const dec = (): void => onChange(clampStep(value - step, min, max, step))
   const inc = (): void => onChange(clampStep(value + step, min, max, step))
   const atMin = value <= min + 1e-6
@@ -181,22 +190,31 @@ function StepperRow({
           />
         </View>
       </View>
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {hint ? <Text style={styles.stepperHint}>{hint}</Text> : null}
     </View>
   )
 }
 
 interface BudgetRowProps {
+  icon: string
   label: string
   value: number
   onDelta: (delta: number) => void
 }
 
-function BudgetRow({ label, value, onDelta }: BudgetRowProps): JSX.Element {
+function BudgetRow({
+  icon,
+  label,
+  value,
+  onDelta,
+}: BudgetRowProps): React.JSX.Element {
   return (
     <View style={styles.budgetRow}>
       <View style={styles.budgetHeader}>
-        <Text style={styles.budgetLabel}>{label}</Text>
+        <View style={styles.budgetLabelRow}>
+          <Text style={styles.budgetIcon}>{icon}</Text>
+          <Text style={styles.budgetLabel}>{label}</Text>
+        </View>
         <View style={styles.budgetControls}>
           <Button
             label="−"
@@ -217,7 +235,7 @@ function BudgetRow({ label, value, onDelta }: BudgetRowProps): JSX.Element {
           />
         </View>
       </View>
-      <StatBar label="" value={value} showValue={false} color={colors.govBlue} />
+      <StatBar label="" value={value} showValue={false} color={colors.primary} />
     </View>
   )
 }
@@ -232,7 +250,7 @@ function OptionPills<T extends string>({
   options,
   active,
   onPick,
-}: OptionPillsProps<T>): JSX.Element {
+}: OptionPillsProps<T>): React.JSX.Element {
   return (
     <View style={styles.pillsRow}>
       {options.map((opt) => {
@@ -247,7 +265,13 @@ function OptionPills<T extends string>({
               pressed && styles.pillPressed,
             ]}
           >
-            <Text style={[styles.pillLabel, isActive && styles.pillLabelActive]}>
+            <Text
+              style={[
+                styles.pillLabel,
+                isActive && styles.pillLabelActive,
+              ]}
+              numberOfLines={1}
+            >
               {opt.label}
             </Text>
           </Pressable>
@@ -257,11 +281,39 @@ function OptionPills<T extends string>({
   )
 }
 
-// ============================================================================
-// Main screen
-// ============================================================================
+interface AdvisorToastProps {
+  notes: string[]
+  onDismiss: () => void
+}
 
-export default function PolicyTab(): JSX.Element {
+function AdvisorToast({
+  notes,
+  onDismiss,
+}: AdvisorToastProps): React.JSX.Element {
+  return (
+    <Card title="Advisors say" tint="gold">
+      <View style={styles.toastHeader}>
+        <View style={{ flex: 1 }} />
+        <Pressable onPress={onDismiss} hitSlop={8}>
+          <Text style={styles.toastClose}>×</Text>
+        </Pressable>
+      </View>
+      <View>
+        {notes.map((note, i) => (
+          <Text key={i} style={styles.toastNote}>
+            • {note}
+          </Text>
+        ))}
+      </View>
+    </Card>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// PolicyTab
+// ----------------------------------------------------------------------------
+
+export default function PolicyTab(): React.JSX.Element {
   const tax = useTax()
   const budget = useBudget()
   const policy = usePolicy()
@@ -269,17 +321,14 @@ export default function PolicyTab(): JSX.Element {
   const setBudget = useGameStore((s) => s.setBudget)
   const setPolicy = useGameStore((s) => s.setPolicy)
 
-  // Toast-style preview of the most recent policy change.
   const [previewNotes, setPreviewNotes] = useState<string[]>([])
 
   const budgetSum = useMemo<number>(
-    () =>
-      BUDGET_SPECS.reduce(
-        (acc, spec) => acc + (budget[spec.key] ?? 0),
-        0,
-      ),
+    () => BUDGET_SPECS.reduce((acc, s) => acc + (budget[s.key] ?? 0), 0),
     [budget],
   )
+
+  const budgetGood = Math.abs(budgetSum - 100) < 0.5
 
   const handleTaxChange = (key: keyof TaxPolicy, next: number): void => {
     setTax({ [key]: next } as Partial<TaxPolicy>)
@@ -294,7 +343,7 @@ export default function PolicyTab(): JSX.Element {
 
   const applyPolicyChange = (change: Partial<PolicyState>): void => {
     const notes = previewPolicyChange(policy, change)
-    setPreviewNotes(notes)
+    if (notes.length > 0) setPreviewNotes(notes)
     setPolicy(change)
   }
 
@@ -303,95 +352,86 @@ export default function PolicyTab(): JSX.Element {
     applyPolicyChange({ minimumWage: next })
   }
 
-  const dismissPreview = (): void => setPreviewNotes([])
-
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.root}>
       {previewNotes.length > 0 ? (
-        <Panel style={styles.toast}>
-          <View style={styles.toastHeader}>
-            <PixelText size="xs" color={colors.govGold}>
-              Advisors say
-            </PixelText>
-            <Pressable onPress={dismissPreview} hitSlop={8}>
-              <Text style={styles.toastClose}>×</Text>
-            </Pressable>
-          </View>
-          {previewNotes.map((note, idx) => (
-            <Text key={idx} style={styles.toastNote}>
-              • {note}
-            </Text>
-          ))}
-        </Panel>
+        <AdvisorToast
+          notes={previewNotes}
+          onDismiss={() => setPreviewNotes([])}
+        />
       ) : null}
 
-      {/* SECTION 1: TAXES =================================================== */}
-      <Panel title="Taxes">
-        <Text style={styles.sectionIntro}>
-          Set the rates that fund the city. Higher rates raise revenue but can
-          slow growth and push residents or businesses elsewhere.
-        </Text>
-        {TAX_SPECS.map((spec) => (
-          <StepperRow
-            key={spec.key}
-            label={spec.label}
-            value={tax[spec.key]}
-            min={spec.min}
-            max={spec.max}
-            step={spec.step}
-            unit={spec.unit}
-            hint={spec.hint}
-            onChange={(next) => handleTaxChange(spec.key, next)}
-          />
-        ))}
-      </Panel>
+      {/* Taxes */}
+      <Card
+        title="Taxes"
+        subtitle="Set the rates that fund the city."
+      >
+        <View style={styles.steppersBlock}>
+          {TAX_SPECS.map((spec) => (
+            <StepperRow
+              key={spec.key}
+              label={spec.label}
+              value={tax[spec.key]}
+              min={spec.min}
+              max={spec.max}
+              step={spec.step}
+              unit={spec.unit}
+              hint={spec.hint}
+              onChange={(next) => handleTaxChange(spec.key, next)}
+            />
+          ))}
+        </View>
+      </Card>
 
-      {/* SECTION 2: BUDGET ================================================= */}
-      <Panel title="Budget Allocation (must sum to 100%)">
-        <View style={styles.budgetTotalRow}>
-          <Text style={styles.budgetTotalLabel}>Current total</Text>
+      {/* Budget */}
+      <Card
+        title="Budget Allocation"
+        subtitle="Must sum to 100%."
+        rightAccessory={
           <Text
             style={[
-              styles.budgetTotalValue,
-              Math.abs(budgetSum - 100) < 0.5
-                ? { color: colors.good }
-                : { color: colors.warn },
+              styles.budgetTotal,
+              { color: budgetGood ? colors.good : colors.warn },
             ]}
           >
             {budgetSum.toFixed(1)}%
           </Text>
+        }
+      >
+        <View style={styles.budgetBlock}>
+          {BUDGET_SPECS.map((spec) => (
+            <BudgetRow
+              key={spec.key}
+              icon={spec.icon}
+              label={spec.label}
+              value={budget[spec.key] ?? 0}
+              onDelta={(d) => handleBudgetDelta(spec.key, d)}
+            />
+          ))}
         </View>
-        <Text style={styles.sectionIntro}>
-          Adjust by 1%; the store will renormalize automatically so the total
-          stays at 100%.
+        <Text style={styles.budgetFooter}>
+          Increments of 1%; the city auto-renormalizes to 100%.
         </Text>
-        {BUDGET_SPECS.map((spec) => (
-          <BudgetRow
-            key={spec.key}
-            label={spec.label}
-            value={budget[spec.key] ?? 0}
-            onDelta={(delta) => handleBudgetDelta(spec.key, delta)}
-          />
-        ))}
-      </Panel>
+      </Card>
 
-      {/* SECTION 3: POLICIES =============================================== */}
-      <Panel title="Policies">
-        <Text style={styles.sectionIntro}>
-          Structural levers that compound over many turns. Tap an option to
-          switch.
-        </Text>
-
-        {/* Minimum wage stepper — separate row */}
+      {/* Policies */}
+      <Card
+        title="Policies"
+        subtitle="Structural levers that compound over many turns."
+      >
+        {/* Minimum wage */}
         <View style={styles.policyBlock}>
-          <PixelText size="sm" color={colors.text}>
-            {POLICY_INFO.minimumWage.label}
-          </PixelText>
-          <Text style={styles.policyShort}>{POLICY_INFO.minimumWage.short}</Text>
+          <View style={styles.policyHeader}>
+            <Text style={styles.policyIcon}>💵</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.policyName}>
+                {POLICY_INFO.minimumWage.label}
+              </Text>
+              <Text style={styles.policyHint}>
+                {POLICY_INFO.minimumWage.short}
+              </Text>
+            </View>
+          </View>
           <StepperRow
             label="Wage floor"
             value={policy.minimumWage}
@@ -404,30 +444,33 @@ export default function PolicyTab(): JSX.Element {
           />
         </View>
 
-        {/* Qualitative policies */}
+        {/* Discrete policies */}
         {DISCRETE_POLICY_KEYS.map((key) => {
           const info = POLICY_INFO[key]
-          const options = info.options ?? []
-          const activeValue = policy[key] as string
-          const activeOption = options.find((o) => o.value === activeValue)
+          if (!info || !info.options) return null
+          const active = policy[key] as string
+          const activeOpt = info.options.find((o) => o.value === active)
           return (
             <View key={key} style={styles.policyBlock}>
-              <PixelText size="sm" color={colors.text}>
-                {info.label}
-              </PixelText>
-              <Text style={styles.policyShort}>{info.short}</Text>
+              <View style={styles.policyHeader}>
+                <Text style={styles.policyIcon}>{POLICY_ICONS[key]}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.policyName}>{info.label}</Text>
+                  <Text style={styles.policyHint}>{info.short}</Text>
+                </View>
+              </View>
               <OptionPills
-                options={options}
-                active={activeValue}
-                onPick={(value) =>
-                  applyPolicyChange({ [key]: value } as Partial<PolicyState>)
+                options={info.options}
+                active={active}
+                onPick={(v: string) =>
+                  applyPolicyChange({ [key]: v } as Partial<PolicyState>)
                 }
               />
-              {activeOption ? (
-                <View style={styles.effectsBox}>
-                  {activeOption.effects.slice(0, 2).map((eff, idx) => (
-                    <Text key={idx} style={styles.effectLine}>
-                      • {eff}
+              {activeOpt ? (
+                <View style={styles.effectsBlock}>
+                  {activeOpt.effects.slice(0, 2).map((e, i) => (
+                    <Text key={i} style={styles.effectText}>
+                      • {e}
                     </Text>
                   ))}
                 </View>
@@ -435,47 +478,40 @@ export default function PolicyTab(): JSX.Element {
             </View>
           )
         })}
-      </Panel>
-    </ScrollView>
+      </Card>
+    </View>
   )
 }
 
-// ============================================================================
+// ----------------------------------------------------------------------------
 // Styles
-// ============================================================================
+// ----------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  content: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  sectionIntro: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body,
-    color: colors.textDim,
-    marginBottom: spacing.sm,
+  root: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.huge,
+    gap: spacing.md,
   },
 
-  // Stepper row (taxes + min wage)
+  // Stepper
+  steppersBlock: {
+    gap: spacing.md,
+  },
   stepperRow: {
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
+    gap: spacing.xs,
   },
   stepperHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   stepperLabel: {
     fontFamily: fonts.bodyBold,
     fontSize: sizes.body,
     color: colors.text,
-    flexShrink: 1,
+    flex: 1,
   },
   stepperControls: {
     flexDirection: 'row',
@@ -483,55 +519,46 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   stepperBtn: {
-    minWidth: 40,
+    minWidth: 36,
+    paddingHorizontal: spacing.sm,
   },
   stepperValue: {
     fontFamily: fonts.mono,
     fontSize: sizes.monoMd,
     color: colors.text,
-    minWidth: 64,
+    minWidth: 56,
     textAlign: 'center',
   },
-  hint: {
+  stepperHint: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 2,
+    fontSize: sizes.caption,
     color: colors.textMuted,
-    marginTop: spacing.xs,
+    fontStyle: 'italic',
   },
 
-  // Budget rows
-  budgetTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: colors.bgPanelAlt,
-    borderRadius: radius.sm,
-    marginBottom: spacing.sm,
-  },
-  budgetTotalLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  budgetTotalValue: {
+  // Budget
+  budgetTotal: {
     fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
-    color: colors.text,
+    fontSize: sizes.monoMd,
+  },
+  budgetBlock: {
+    gap: spacing.md,
   },
   budgetRow: {
-    paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
+    gap: spacing.xs,
   },
   budgetHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs,
+    alignItems: 'center',
+  },
+  budgetLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  budgetIcon: {
+    fontSize: 16,
   },
   budgetLabel: {
     fontFamily: fonts.bodyBold,
@@ -547,90 +574,105 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: sizes.monoMd,
     color: colors.text,
-    minWidth: 48,
+    minWidth: 56,
     textAlign: 'center',
   },
+  budgetFooter: {
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+  },
 
-  // Policy blocks
+  // Policy block
   policyBlock: {
     paddingVertical: spacing.md,
-    borderBottomColor: colors.border,
-    borderBottomWidth: 1,
+    borderTopColor: colors.divider,
+    borderTopWidth: 1,
+    gap: spacing.sm,
   },
-  policyShort: {
+  policyHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  policyIcon: {
+    fontSize: 24,
+  },
+  policyName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyLg,
+    color: colors.text,
+  },
+  policyHint: {
     fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
+    fontSize: sizes.caption,
     color: colors.textDim,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
+    marginTop: 2,
+    lineHeight: 16,
   },
+
+  // Pills
   pillsRow: {
     flexDirection: 'row',
     gap: spacing.xs,
-    flexWrap: 'wrap',
   },
   pill: {
-    paddingHorizontal: spacing.md,
+    flex: 1,
     paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
     backgroundColor: colors.bgPanelAlt,
-    minWidth: 88,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.md,
     alignItems: 'center',
   },
   pillActive: {
-    backgroundColor: colors.govBlue,
-    borderColor: colors.govNavy,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   pillPressed: {
     opacity: 0.85,
   },
   pillLabel: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
   },
   pillLabelActive: {
-    color: colors.paper,
-  },
-  effectsBox: {
-    marginTop: spacing.sm,
-    paddingLeft: spacing.sm,
-    borderLeftColor: colors.govGold,
-    borderLeftWidth: 2,
-  },
-  effectLine: {
-    fontFamily: fonts.body,
-    fontSize: sizes.body - 1,
-    color: colors.textDim,
-    marginVertical: 1,
+    color: '#ffffff',
   },
 
-  // Preview toast
-  toast: {
-    backgroundColor: colors.bgPanelAlt,
-    borderColor: colors.govGold,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  effectsBlock: {
+    gap: 2,
+    marginTop: spacing.xs,
   },
+  effectText: {
+    fontFamily: fonts.body,
+    fontSize: sizes.caption,
+    color: colors.textDim,
+    lineHeight: 16,
+  },
+
+  // Toast
   toastHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    marginTop: -spacing.sm,
   },
   toastClose: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
+    fontFamily: fonts.bodyBold,
+    fontSize: 24,
     color: colors.textDim,
-    paddingHorizontal: spacing.sm,
+    lineHeight: 24,
+    paddingHorizontal: spacing.xs,
   },
   toastNote: {
     fontFamily: fonts.body,
-    fontSize: sizes.body,
+    fontSize: sizes.bodyXs,
     color: colors.text,
-    marginVertical: 1,
+    lineHeight: 18,
+    marginVertical: 2,
   },
 })

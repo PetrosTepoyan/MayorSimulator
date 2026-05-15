@@ -1,106 +1,94 @@
 import React, { useState } from 'react'
-import { ScrollView, View, Text, Pressable, StyleSheet } from 'react-native'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
 import { useDistricts } from '../../store/gameStore'
-import { PixelText } from '../ui/PixelText'
+import { Card } from '../ui/Card'
 import { StatBar } from '../ui/StatBar'
-import { StatTile } from '../ui/StatTile'
 import { formatMoney, formatPop } from '../../game/util'
 import { colors, fonts, sizes, spacing, radius } from '../../theme'
 import type { District, IndustryType, PoliticalLeaning } from '../../game/types'
 
 // ----------------------------------------------------------------------------
-// Color helpers — chips and stripes
+// Industry + leaning lookups
 // ----------------------------------------------------------------------------
 
 const INDUSTRY_COLORS: Record<IndustryType, string> = {
-  tech: '#3b82f6',          // blue
-  finance: '#c39432',       // gold (govGold)
-  industrial: '#a3262d',    // red (govRed)
-  services: '#14b8a6',      // teal
-  agriculture: '#356b3b',   // green (govGreen)
-  residential: '#8b5cf6',   // purple
-  tourism: '#ec4899',       // pink
-  energy: '#f59e0b',        // amber
-  university: '#1d4f91',    // gov blue
-  mixed: '#6b7280',         // slate
+  tech: colors.ind_tech,
+  finance: colors.ind_finance,
+  industrial: colors.ind_industrial,
+  services: colors.ind_services,
+  agriculture: colors.ind_agriculture,
+  residential: colors.ind_residential,
+  tourism: colors.ind_tourism,
+  energy: colors.ind_energy,
+  university: colors.ind_university,
+  mixed: colors.ind_mixed,
 }
 
-const LEANING_COLORS: Record<PoliticalLeaning, string> = {
-  progressive: '#3b82f6',
-  centrist: '#9ca3af',
-  conservative: '#a3262d',
+const INDUSTRY_ICONS: Record<IndustryType, string> = {
+  tech: '💻',
+  finance: '🏦',
+  industrial: '🏭',
+  services: '🛎️',
+  agriculture: '🌾',
+  residential: '🏘️',
+  tourism: '🏖️',
+  energy: '⚡',
+  university: '🎓',
+  mixed: '🌐',
 }
 
-const LEANING_LABELS: Record<PoliticalLeaning, string> = {
-  progressive: 'PROG',
-  centrist: 'CTR',
-  conservative: 'CONS',
+const INDUSTRY_LABEL: Record<IndustryType, string> = {
+  tech: 'Tech',
+  finance: 'Finance',
+  industrial: 'Industrial',
+  services: 'Services',
+  agriculture: 'Agriculture',
+  residential: 'Residential',
+  tourism: 'Tourism',
+  energy: 'Energy',
+  university: 'University',
+  mixed: 'Mixed',
 }
 
-// Compose a 0-100 health score from the district's stat profile.
-// Higher is better. Good signals - bad signals.
-function districtHealth(d: District): number {
-  const s = d.stats
-  const safety = 100 - s.crime
-  const cleanliness = 100 - s.pollution
-  const calm = 100 - s.unrest
-  // Mean of positives (education, approval, housing, safety, cleanliness, calm)
-  const score =
-    (s.education + s.approval + s.housing + safety + cleanliness + calm) / 6
-  return Math.max(0, Math.min(100, score))
+const LEAN_COLORS: Record<PoliticalLeaning, string> = {
+  progressive: colors.lean_progressive,
+  centrist: colors.lean_centrist,
+  conservative: colors.lean_conservative,
 }
 
-function healthColor(health: number): string {
-  if (health >= 65) return colors.good
-  if (health >= 40) return colors.govGold
-  return colors.bad
-}
-
-function approvalColor(approval: number): string {
-  if (approval < 30) return colors.bad
-  if (approval > 65) return colors.good
-  return colors.text
-}
-
-function unrestColor(unrest: number): string {
-  if (unrest >= 75) return colors.bad
-  if (unrest >= 50) return colors.warn
-  return colors.textDim
+const LEAN_LABEL: Record<PoliticalLeaning, string> = {
+  progressive: 'Progressive',
+  centrist: 'Centrist',
+  conservative: 'Conservative',
 }
 
 // ----------------------------------------------------------------------------
-// Chip — a small pill-shaped tag with an optional color square
+// Chip
 // ----------------------------------------------------------------------------
 
 interface ChipProps {
+  icon?: string
   label: string
   color: string
 }
 
-function Chip({ label, color }: ChipProps): JSX.Element {
+function Chip({ icon, label, color }: ChipProps): React.JSX.Element {
   return (
     <View style={[styles.chip, { borderColor: color }]}>
-      <View style={[styles.chipDot, { backgroundColor: color }]} />
+      {icon ? <Text style={styles.chipIcon}>{icon}</Text> : null}
       <Text style={[styles.chipLabel, { color }]}>{label}</Text>
     </View>
   )
 }
 
 // ----------------------------------------------------------------------------
-// PopShareBar — tiny horizontal bar showing this district's pop share
+// Approval color
 // ----------------------------------------------------------------------------
 
-interface PopShareBarProps {
-  share: number // 0-1
-}
-
-function PopShareBar({ share }: PopShareBarProps): JSX.Element {
-  const pct = Math.max(0, Math.min(1, share)) * 100
-  return (
-    <View style={styles.popBarTrack}>
-      <View style={[styles.popBarFill, { width: `${pct}%` }]} />
-    </View>
-  )
+function approvalColor(approval: number): string {
+  if (approval >= 60) return colors.good
+  if (approval < 30) return colors.bad
+  return colors.warn
 }
 
 // ----------------------------------------------------------------------------
@@ -109,133 +97,102 @@ function PopShareBar({ share }: PopShareBarProps): JSX.Element {
 
 interface DistrictCardProps {
   district: District
-  totalPopulation: number
   expanded: boolean
   onToggle: () => void
 }
 
 function DistrictCard({
   district,
-  totalPopulation,
   expanded,
   onToggle,
-}: DistrictCardProps): JSX.Element {
-  const health = districtHealth(district)
-  const stripe = healthColor(health)
-  const industryColor = INDUSTRY_COLORS[district.primaryIndustry] ?? colors.textDim
-  const leaningColor = LEANING_COLORS[district.leaning]
-  const popShare = totalPopulation > 0 ? district.stats.population / totalPopulation : 0
+}: DistrictCardProps): React.JSX.Element {
+  const industryColor = INDUSTRY_COLORS[district.primaryIndustry]
+  const industryIcon = INDUSTRY_ICONS[district.primaryIndustry]
+  const leanColor = LEAN_COLORS[district.leaning]
+  const approvalCol = approvalColor(district.stats.approval)
+
+  // For "avg income" — district.stats.avgIncome is $/year; show as $K/yr.
+  const incomeK = district.stats.avgIncome / 1000
 
   return (
     <Pressable
       onPress={onToggle}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      style={({ pressed }) => [styles.cardWrap, pressed && styles.cardPressed]}
     >
-      <View style={[styles.healthStripe, { backgroundColor: stripe }]} />
-      <View style={styles.cardBody}>
-        {/* Header row */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.districtName}>{district.name}</Text>
+      <Card>
+        {/* Top row: name + chips */}
+        <View style={styles.topRow}>
+          <View style={styles.titleCol}>
+            <Text style={styles.districtName} numberOfLines={1}>
+              {district.name}
+            </Text>
             <View style={styles.chipsRow}>
               <Chip
-                label={district.primaryIndustry.toUpperCase()}
+                icon={industryIcon}
+                label={INDUSTRY_LABEL[district.primaryIndustry]}
                 color={industryColor}
               />
-              <Chip
-                label={LEANING_LABELS[district.leaning]}
-                color={leaningColor}
-              />
+              <Chip label={LEAN_LABEL[district.leaning]} color={leanColor} />
             </View>
           </View>
           <Text style={styles.caret}>{expanded ? '▾' : '▸'}</Text>
         </View>
 
-        {/* Pop share bar — always visible */}
-        <View style={styles.popRow}>
-          <Text style={styles.popLabel}>POP</Text>
-          <Text style={styles.popValue}>{formatPop(district.stats.population)}</Text>
-          <View style={styles.popBarWrap}>
-            <PopShareBar share={popShare} />
+        {/* Quick stat row */}
+        <View style={styles.quickRow}>
+          <View style={styles.quickStat}>
+            <Text style={styles.quickIcon}>👥</Text>
+            <Text style={styles.quickValue}>
+              {formatPop(district.stats.population)}
+            </Text>
           </View>
-          <Text style={styles.popShareText}>
-            {(popShare * 100).toFixed(0)}%
-          </Text>
-        </View>
-
-        {expanded ? (
-          <View style={styles.expandedSection}>
-            {/* Mini stat tiles */}
-            <View style={styles.tilesRow}>
-              <StatTile
-                label="POP"
-                value={formatPop(district.stats.population)}
-                small
-                style={styles.tile}
-              />
-              <StatTile
-                label="AVG INCOME"
-                value={formatMoney(district.stats.avgIncome / 1_000_000)}
-                small
-                style={styles.tile}
-              />
-              <StatTile
-                label="APPROVAL"
-                value={`${district.stats.approval.toFixed(0)}%`}
-                tone={
-                  district.stats.approval < 30
-                    ? 'bad'
-                    : district.stats.approval > 65
-                      ? 'good'
-                      : 'neutral'
-                }
-                small
-                style={styles.tile}
-              />
-            </View>
-
-            {/* Stat bars */}
-            <View style={styles.statsBlock}>
-              <StatBar label="EDUCATION" value={district.stats.education} />
-              <StatBar label="CRIME" value={district.stats.crime} inverted />
-              <StatBar label="POLLUTION" value={district.stats.pollution} inverted />
-              <StatBar
-                label="UNREST"
-                value={district.stats.unrest}
-                inverted
-                color={unrestColor(district.stats.unrest)}
-              />
-              <StatBar label="HOUSING" value={district.stats.housing} />
-            </View>
-
-            {/* Flavor */}
-            {district.flavor ? (
-              <Text style={styles.flavor}>{district.flavor}</Text>
-            ) : null}
-
-            {/* Health readout */}
-            <View style={styles.healthRow}>
-              <Text style={styles.healthLabel}>OVERALL HEALTH</Text>
-              <Text style={[styles.healthValue, { color: stripe }]}>
-                {health.toFixed(0)}
-              </Text>
-            </View>
+          <View style={styles.quickStat}>
+            <Text style={styles.quickIcon}>💰</Text>
+            <Text style={styles.quickValue}>
+              ${incomeK.toFixed(0)}K
+              <Text style={styles.quickSuffix}>/yr</Text>
+            </Text>
           </View>
-        ) : (
-          // Collapsed: show approval as a quick read
-          <View style={styles.collapsedStatRow}>
-            <Text style={styles.collapsedStatLabel}>APPROVAL</Text>
-            <Text
-              style={[
-                styles.collapsedStatValue,
-                { color: approvalColor(district.stats.approval) },
-              ]}
-            >
+          <View style={styles.quickStat}>
+            <Text style={styles.quickIcon}>⭐</Text>
+            <Text style={[styles.quickValue, { color: approvalCol }]}>
               {district.stats.approval.toFixed(0)}%
             </Text>
           </View>
-        )}
-      </View>
+        </View>
+
+        {/* Expanded detail */}
+        {expanded ? (
+          <View style={styles.expanded}>
+            <View style={styles.barsBlock}>
+              <StatBar icon="📚" label="Education" value={district.stats.education} />
+              <StatBar
+                icon="🚓"
+                label="Crime"
+                value={district.stats.crime}
+                inverted
+              />
+              <StatBar
+                icon="🏭"
+                label="Pollution"
+                value={district.stats.pollution}
+                inverted
+              />
+              <StatBar
+                icon="🔥"
+                label="Unrest"
+                value={district.stats.unrest}
+                inverted
+              />
+              <StatBar icon="🏠" label="Housing" value={district.stats.housing} />
+            </View>
+
+            {district.flavor ? (
+              <Text style={styles.flavor}>{district.flavor}</Text>
+            ) : null}
+          </View>
+        ) : null}
+      </Card>
     </Pressable>
   )
 }
@@ -244,44 +201,45 @@ function DistrictCard({
 // DistrictsTab
 // ----------------------------------------------------------------------------
 
-export default function DistrictsTab(): JSX.Element {
+export default function DistrictsTab(): React.JSX.Element {
   const districts = useDistricts()
-  const [expanded, setExpanded] = useState<string | null>(districts[0]?.id ?? null)
+  const [expandedId, setExpandedId] = useState<string | null>(
+    districts[0]?.id ?? null,
+  )
 
   const totalPopulation = districts.reduce(
-    (sum, d) => sum + d.stats.population,
+    (s, d) => s + d.stats.population,
     0,
   )
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.titleRow}>
-        <PixelText size="sm" color={colors.textDim}>
-          {`DISTRICTS — ${districts.length}`}
-        </PixelText>
-        <Text style={styles.totalPopText}>{formatPop(totalPopulation)} TOTAL</Text>
+    <View style={styles.root}>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Districts</Text>
+        <Text style={styles.totalText}>
+          {districts.length} areas · {formatPop(totalPopulation)} residents
+        </Text>
       </View>
 
       {districts.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No districts yet.</Text>
-        </View>
+        <Card>
+          <Text style={styles.muted}>No districts yet.</Text>
+        </Card>
       ) : (
-        districts.map((d) => (
-          <DistrictCard
-            key={d.id}
-            district={d}
-            totalPopulation={totalPopulation}
-            expanded={expanded === d.id}
-            onToggle={() => setExpanded(expanded === d.id ? null : d.id)}
-          />
-        ))
+        <View style={styles.list}>
+          {districts.map((d) => (
+            <DistrictCard
+              key={d.id}
+              district={d}
+              expanded={expandedId === d.id}
+              onToggle={() =>
+                setExpandedId(expandedId === d.id ? null : d.id)
+              }
+            />
+          ))}
+        </View>
       )}
-    </ScrollView>
+    </View>
   )
 }
 
@@ -290,61 +248,53 @@ export default function DistrictsTab(): JSX.Element {
 // ----------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.bg,
+  root: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.huge,
+    gap: spacing.md,
   },
-  scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  totalPopText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
-    color: colors.textMuted,
-    letterSpacing: 1,
-  },
-  // Card
-  card: {
-    backgroundColor: colors.bgPanel,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    marginVertical: spacing.xs,
-    flexDirection: 'row',
-  },
-  cardPressed: {
-    backgroundColor: colors.bgPanelAlt,
-  },
-  healthStripe: {
-    width: 4,
-  },
-  cardBody: {
-    flex: 1,
-    padding: spacing.md,
-  },
+
+  // Header
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
+    marginBottom: spacing.xs,
   },
-  headerLeft: {
+  title: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.titleLg,
+    color: colors.text,
+  },
+  totalText: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
+    color: colors.textDim,
+  },
+
+  // List
+  list: {
+    gap: spacing.sm,
+  },
+  cardWrap: {},
+  cardPressed: {
+    opacity: 0.95,
+  },
+
+  // Card content
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  titleCol: {
     flex: 1,
-    paddingRight: spacing.sm,
   },
   districtName: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoLg,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
     color: colors.text,
-    lineHeight: sizes.monoLg + 2,
     marginBottom: spacing.xs,
   },
   chipsRow: {
@@ -353,150 +303,82 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   caret: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.title,
     color: colors.textDim,
-    marginTop: 2,
+    paddingTop: spacing.xs,
   },
+
   // Chip
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     borderWidth: 1,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    marginRight: spacing.xs,
-    backgroundColor: colors.bgPanelAlt,
+    backgroundColor: colors.bgPanel,
   },
-  chipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 4,
+  chipIcon: {
+    fontSize: 12,
   },
   chipLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.caption,
+    letterSpacing: 0.3,
   },
-  // Pop row
-  popRow: {
+
+  // Quick stat row
+  quickRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  quickStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.sm,
+    gap: 4,
   },
-  popLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    letterSpacing: 0.8,
-    marginRight: spacing.xs,
+  quickIcon: {
+    fontSize: 16,
   },
-  popValue: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+  quickValue: {
+    fontFamily: fonts.bodyBold,
+    fontSize: sizes.body,
     color: colors.text,
-    marginRight: spacing.sm,
-    minWidth: 48,
   },
-  popBarWrap: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  popBarTrack: {
-    height: 4,
-    backgroundColor: colors.bg,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  popBarFill: {
-    height: '100%',
-    backgroundColor: colors.govBlue,
-  },
-  popShareText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+  quickSuffix: {
+    fontFamily: fonts.body,
+    fontSize: sizes.bodyXs,
     color: colors.textMuted,
-    minWidth: 32,
-    textAlign: 'right',
   },
-  // Collapsed view
-  collapsedStatRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  collapsedStatLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    letterSpacing: 0.8,
-  },
-  collapsedStatValue: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-  },
+
   // Expanded
-  expandedSection: {
+  expanded: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
-    borderTopColor: colors.border,
+    borderTopColor: colors.divider,
     borderTopWidth: 1,
-  },
-  tilesRow: {
-    flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.md,
   },
-  tile: {
-    minWidth: 80,
-  },
-  statsBlock: {
-    marginBottom: spacing.sm,
+  barsBlock: {
+    gap: 2,
   },
   flavor: {
     fontFamily: fonts.body,
-    fontSize: sizes.body,
+    fontSize: sizes.bodyXs,
     color: colors.textDim,
     fontStyle: 'italic',
-    lineHeight: sizes.body + 4,
-    marginTop: spacing.sm,
+    lineHeight: 18,
+    marginTop: spacing.xs,
   },
-  healthRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-  },
-  healthLabel: {
-    fontFamily: fonts.pixel,
-    fontSize: sizes.pixelXs,
-    color: colors.textDim,
-    letterSpacing: 0.8,
-  },
-  healthValue: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoMd,
-  },
+
   // Empty
-  emptyState: {
-    padding: spacing.xl,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontFamily: fonts.mono,
-    fontSize: sizes.monoSm,
+  muted: {
+    fontFamily: fonts.body,
+    fontSize: sizes.body,
     color: colors.textMuted,
+    fontStyle: 'italic',
   },
 })
